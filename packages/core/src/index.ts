@@ -30,6 +30,10 @@ export * from './nexus/client.js';
 // Inner container formats
 export * from './formats/wpd.js';
 export * from './formats/trb.js';
+// Texture pipeline (GTEX header + DDS + IMGB pixel blob)
+export * from './formats/gtex.js';
+export * from './formats/dds.js';
+export * from './formats/imgb.js';
 
 // GameId is declared in both gameinfo.ts and manager.ts (identical union);
 // re-export the canonical one to resolve the star-export ambiguity.
