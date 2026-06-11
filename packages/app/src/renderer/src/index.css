@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(1200px 800px at 70% -10%, #1b2347 0%, #0b0d17 55%);
+  color: theme('colors.nova.text');
+  font-family: theme('fontFamily.sans');
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* thin crystal scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: theme('colors.nova.border');
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: theme('colors.nova.accent');
+}
+
+@layer components {
+  .panel {
+    @apply bg-nova-panel border border-nova-border rounded-xl;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+           border border-nova-border bg-nova-panel2 text-nova-text transition
+           hover:border-nova-accent hover:text-nova-accent disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply border-transparent bg-nova-accent/15 text-nova-accent
+           hover:bg-nova-accent/25;
+  }
+  .btn-danger {
+    @apply hover:border-nova-bad hover:text-nova-bad;
+  }
+  .field {
+    @apply w-full rounded-lg border border-nova-border bg-nova-bg/60 px-3 py-2 text-sm text-nova-text
+           placeholder:text-nova-muted focus:border-nova-accent focus:outline-none;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
