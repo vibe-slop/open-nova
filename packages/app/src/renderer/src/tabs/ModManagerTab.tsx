@@ -1,108 +1,173 @@
 import { useEffect, useState } from 'react';
-import type { GameId, ModInfo, ModInstallOptions } from '../../../shared/ipc';
-import { Panel, Button, StatusChip } from '../ui';
-
-const DEFAULT_OPTS: ModInstallOptions = { data: true, enVoice: false, jpVoice: false, external: false, code: false };
+import type { GameId, LibraryMod, NexusAuth } from '../../../shared/ipc';
+import { Panel, Button, Toggle } from '../ui';
 
 export function ModManagerTab({ game }: { game: GameId }) {
-  const [mods, setMods] = useState<ModInfo[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [mods, setMods] = useState<LibraryMod[]>([]);
+  const [auth, setAuth] = useState<NexusAuth | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string>('');
 
-  const refresh = () => window.nova.listMods(game).then(setMods);
+  const refresh = () => window.nova.libraryList(game).then(setMods);
   useEffect(() => {
-    setSelected(null);
     refresh();
+    window.nova.getNexusAuth().then(setAuth);
+    // An nxm:// "Download with Manager" install completing should refresh + notify.
+    const off = window.nova.onNxm((e) => {
+      setNotice(e.message);
+      if (e.status === 'installed' || e.status === 'error') refresh();
+    });
+    return off;
   }, [game]);
 
-  const sel = mods.find((m) => m.name === selected) ?? null;
-
-  const importMod = async () => {
-    const f = await window.nova.browseForFile('Select a .ncmp mod pack', [{ name: 'Nova ModPack', extensions: ['ncmp', 'zip'] }]);
-    if (!f) return;
-    setBusy(true);
+  const toggle = async (mod: LibraryMod, enabled: boolean) => {
+    setBusy(mod.modName);
     try {
-      setMods(await window.nova.importMod(f));
+      const r = await window.nova.librarySetEnabled(game, mod.modName, enabled);
+      setMods(r.mods);
+      if (!r.ok) setNotice(r.message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
-  const act = async (kind: 'install' | 'uninstall' | 'remove') => {
-    if (!sel) return;
-    setBusy(true);
+  const importFile = async () => {
+    setBusy('import');
     try {
-      if (kind === 'install') await window.nova.installMod(game, sel.name, DEFAULT_OPTS);
-      else if (kind === 'uninstall') await window.nova.uninstallMod(game, sel.name, DEFAULT_OPTS);
-      else setMods(await window.nova.removeMod(game, sel.name));
-      await refresh();
+      const r = await window.nova.libraryImportFile(game);
+      setMods(r.mods);
+      setNotice(r.message);
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  const remove = async (mod: LibraryMod) => {
+    setBusy(mod.modName);
+    try {
+      setMods(await window.nova.libraryRemove(game, mod.modName));
+    } finally {
+      setBusy(null);
     }
   };
 
   return (
-    <div className="grid h-full grid-cols-[1fr_320px] gap-5">
+    <div className="mx-auto max-w-3xl space-y-5">
+      <NexusBar game={game} auth={auth} onAuth={setAuth} />
+
       <Panel
         title={`Mods · ${game}`}
         right={
-          <Button onClick={importMod} disabled={busy}>
-            + Import .ncmp
+          <Button onClick={importFile} disabled={busy === 'import'}>
+            {busy === 'import' ? 'Importing…' : '+ Import file'}
           </Button>
         }
       >
-        <div className="space-y-1">
-          {mods.length === 0 && <div className="py-10 text-center text-sm text-nova-muted">No mods yet. Import a .ncmp pack to get started.</div>}
+        {notice && <div className="mb-3 rounded-lg bg-nova-accent/10 px-3 py-2 text-xs text-nova-accent">{notice}</div>}
+        <div className="space-y-2">
+          {mods.length === 0 && (
+            <div className="py-8 text-center text-sm text-nova-muted">
+              No mods yet. Connect Nexus and use “Download with Manager” on a mod page, or import a file.
+            </div>
+          )}
           {mods.map((m) => (
-            <button
-              key={m.name}
-              onClick={() => setSelected(m.name)}
-              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition ${
-                selected === m.name ? 'border-nova-accent bg-nova-accent/10' : 'border-transparent hover:bg-nova-panel2'
-              }`}
-            >
-              <div>
-                <div className="text-sm font-medium text-nova-text">{m.name}</div>
-                <div className="text-xs text-nova-muted">
-                  {m.author} · v{m.version}
+            <div key={m.modName} className="flex items-center gap-3 rounded-lg border border-nova-border bg-nova-panel2 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-nova-text">{m.name}</span>
+                  <LayoutChip mod={m} />
+                </div>
+                <div className="truncate text-xs text-nova-muted">
+                  {m.author && `${m.author} · `}
+                  {m.version && `v${m.version} · `}
+                  {m.source === 'nexus' ? 'Nexus' : m.source === 'ncmp' ? 'ModPack' : 'local'}
+                  {!m.installable && m.note ? ` · ${m.note}` : ''}
                 </div>
               </div>
-              <StatusChip status={m.status} />
-            </button>
+              <Toggle checked={m.enabled} onChange={(v) => toggle(m, v)} label={m.enabled ? 'On' : 'Off'} />
+              <Button variant="danger" onClick={() => remove(m)} disabled={busy === m.modName}>
+                ✕
+              </Button>
+            </div>
           ))}
         </div>
       </Panel>
 
-      <Panel title="Details">
-        {!sel ? (
-          <div className="py-10 text-center text-sm text-nova-muted">Select a mod.</div>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <div className="text-lg font-semibold">{sel.name}</div>
-              <div className="text-xs text-nova-muted">
-                {sel.author} · v{sel.version}
-              </div>
-            </div>
-            <p className="text-sm text-nova-muted">{sel.summary || 'No description.'}</p>
-            <StatusChip status={sel.status} />
-            <div className="space-y-2 pt-2">
-              {sel.installed ? (
-                <Button className="w-full" disabled={busy} onClick={() => act('uninstall')}>
-                  Uninstall
-                </Button>
-              ) : (
-                <Button variant="primary" className="w-full" disabled={busy || sel.status === 'Wrong Game'} onClick={() => act('install')}>
-                  Install
-                </Button>
-              )}
-              <Button variant="danger" className="w-full" disabled={busy} onClick={() => act('remove')}>
-                Remove from library
-              </Button>
-            </div>
-          </div>
-        )}
-      </Panel>
+      <p className="text-center text-xs text-nova-muted">
+        Higher mods in the list win file conflicts. Enabling needs the game unpacked (Launch → Unpack game data).
+      </p>
     </div>
+  );
+}
+
+function LayoutChip({ mod }: { mod: LibraryMod }) {
+  if (!mod.installable) return <span className="chip bg-nova-warn/15 text-nova-warn">needs manual install</span>;
+  const tone = mod.layout === 'unknown' ? 'bg-nova-warn/15 text-nova-warn' : 'bg-nova-border/40 text-nova-muted';
+  return <span className={`chip ${tone}`}>{mod.layout}</span>;
+}
+
+function NexusBar({ game, auth, onAuth }: { game: GameId; auth: NexusAuth | null; onAuth: (a: NexusAuth) => void }) {
+  const [key, setKey] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!key.trim()) return;
+    setSaving(true);
+    try {
+      onAuth(await window.nova.setNexusApiKey(key.trim()));
+      setKey('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (auth?.hasKey && auth.userName) {
+    return (
+      <Panel title="Nexus Mods">
+        <div className="flex items-center justify-between">
+          <div className="text-sm">
+            Connected as <span className="font-medium text-nova-text">{auth.userName}</span>{' '}
+            <span className={`chip ml-1 ${auth.premium ? 'bg-nova-good/15 text-nova-good' : 'bg-nova-border/40 text-nova-muted'}`}>
+              {auth.premium ? 'Premium' : 'Free'}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="primary" onClick={() => window.nova.openNexusModsPage(game)}>
+              Browse {game} mods ↗
+            </Button>
+            <Button onClick={async () => onAuth(await window.nova.clearNexusApiKey())}>Sign out</Button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-nova-muted">
+          On a mod page, click <span className="text-nova-text">“Download: Mod Manager”</span> — open-nova catches it, downloads,
+          and adds it below to enable. {auth.premium ? '' : '(Free accounts must use the Mod Manager button; direct in-app download needs Premium.)'}
+        </p>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Connect Nexus Mods">
+      <p className="mb-3 text-xs text-nova-muted">
+        Paste your personal API key from{' '}
+        <button className="text-nova-accent underline" onClick={() => window.nova.openNexusModsPage(game)}>
+          nexusmods.com → My account → API
+        </button>
+        . Stored encrypted on this device.
+      </p>
+      <div className="flex gap-2">
+        <input
+          className="field font-mono"
+          type="password"
+          placeholder="Nexus personal API key"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+        />
+        <Button variant="primary" onClick={save} disabled={saving || !key.trim()}>
+          {saving ? 'Validating…' : 'Connect'}
+        </Button>
+      </div>
+    </Panel>
   );
 }

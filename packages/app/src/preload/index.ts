@@ -24,6 +24,18 @@ const api: NovaApi = {
   unpackGame: (game) => ipcRenderer.invoke(IPC.unpackGame, game),
   launchGame: (game) => ipcRenderer.invoke(IPC.launchGame, game),
 
+  getNexusAuth: () => ipcRenderer.invoke(IPC.getNexusAuth),
+  setNexusApiKey: (key) => ipcRenderer.invoke(IPC.setNexusApiKey, key),
+  clearNexusApiKey: () => ipcRenderer.invoke(IPC.clearNexusApiKey),
+  openNexusModsPage: (game) => ipcRenderer.invoke(IPC.openNexusModsPage, game),
+
+  libraryList: (game) => ipcRenderer.invoke(IPC.libraryList, game),
+  librarySetEnabled: (game, modName, enabled) => ipcRenderer.invoke(IPC.librarySetEnabled, game, modName, enabled),
+  librarySetOrder: (game, order) => ipcRenderer.invoke(IPC.librarySetOrder, game, order),
+  libraryRemove: (game, modName) => ipcRenderer.invoke(IPC.libraryRemove, game, modName),
+  libraryImportFile: (game) => ipcRenderer.invoke(IPC.libraryImportFile, game),
+  nexusInstall: (game, modId, fileId) => ipcRenderer.invoke(IPC.nexusInstall, game, modId, fileId),
+
   onProgress: (cb) => {
     const h = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
     ipcRenderer.on(IPC.evProgress, h);
@@ -33,6 +45,11 @@ const api: NovaApi = {
     const h = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
     ipcRenderer.on(IPC.evLog, h);
     return () => ipcRenderer.removeListener(IPC.evLog, h);
+  },
+  onNxm: (cb) => {
+    const h = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(IPC.evNxm, h);
+    return () => ipcRenderer.removeListener(IPC.evNxm, h);
   },
 };
 

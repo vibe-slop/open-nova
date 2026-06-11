@@ -3,7 +3,7 @@
  * Electron/preload. Installed onto window.nova only when the real bridge is
  * absent. Lets the UI be developed and visually checked without a game install.
  */
-import type { NovaApi, AppConfig, SteamInfo, ModInfo, GameId } from '../../shared/ipc';
+import type { NovaApi, AppConfig, SteamInfo, ModInfo, GameId, LibraryMod, NexusAuth } from '../../shared/ipc';
 
 let config: AppConfig = {
   selectedGame: 'XIII-2',
@@ -35,6 +35,16 @@ const mods: Record<GameId, ModInfo[]> = {
   'XIII-LR': [],
 };
 
+let auth: NexusAuth = { hasKey: false, premium: false, userName: null };
+const libMods: Record<GameId, LibraryMod[]> = {
+  XIII: [],
+  'XIII-2': [
+    { modName: 'FF XIII-2 HD', name: 'FF XIII-2 HD', game: 'XIII-2', source: 'nexus', version: '1.1.0', author: 'MJB', summary: 'AI-upscaled textures.', layout: 'dataRoot', installable: true, enabled: true, priority: 1, note: '' },
+    { modName: 'Console Button Prompts', name: 'Console Button Prompts', game: 'XIII-2', source: 'local', version: '2.2', author: 'Krisan Thyme', summary: 'Xbox/PS icons.', layout: 'bare', installable: true, enabled: false, priority: 2, note: '' },
+  ],
+  'XIII-LR': [],
+};
+
 const delay = <T>(v: T, ms = 250) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
 export const mockApi: NovaApi = {
@@ -59,8 +69,25 @@ export const mockApi: NovaApi = {
   unpackArchive: () => delay({ ok: true, fileCount: 1234 }),
   unpackGame: () => delay({ ok: true, message: 'Unpacked (mock).' }, 800),
   launchGame: () => delay({ ok: true, message: 'Launching via Steam…' }),
+
+  getNexusAuth: () => delay(auth),
+  setNexusApiKey: (key) => delay((auth = { hasKey: true, premium: key.includes('prem'), userName: 'DeckUser' })),
+  clearNexusApiKey: () => delay((auth = { hasKey: false, premium: false, userName: null })),
+  openNexusModsPage: () => delay(undefined),
+  libraryList: (game) => delay(libMods[game] ?? []),
+  librarySetEnabled: (game, modName, enabled) => {
+    const m = (libMods[game] ?? []).find((x) => x.modName === modName);
+    if (m) m.enabled = enabled;
+    return delay({ ok: true, message: enabled ? 'Enabled.' : 'Disabled.', mods: libMods[game] ?? [] });
+  },
+  librarySetOrder: (game) => delay(libMods[game] ?? []),
+  libraryRemove: (game, modName) => delay((libMods[game] = (libMods[game] ?? []).filter((m) => m.modName !== modName))),
+  libraryImportFile: (game) => delay({ ok: true, message: 'Imported (mock).', mods: libMods[game] ?? [] }),
+  nexusInstall: (game) => delay({ ok: true, message: 'Imported (mock).', mods: libMods[game] ?? [] }),
+
   onProgress: () => () => {},
   onLog: () => () => {},
+  onNxm: () => () => {},
 };
 
 export function installMockIfNeeded(): void {

@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
-import { join } from 'node:path';
+import { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } from 'electron';
+import { join, resolve as resolvePath } from 'node:path';
 import { promises as fs } from 'node:fs';
 import { spawn } from 'node:child_process';
 import {
@@ -9,16 +9,21 @@ import {
   parseLibraryFolders,
   findGameInstall,
   ModManager,
-  parseFilelist,
-  buildFilelist,
+  ModLibrary,
   unpackArchive,
   decryptFilelist,
   encryptFilelist,
   isLargeAddressAware,
   patchLargeAddressAware,
+  NexusClient,
+  NexusError,
+  parseNxmUrl,
+  gameIdForNxm,
+  NEXUS_DOMAINS,
   type GameId,
+  type LibraryMod as CoreLibraryMod,
 } from '@open-nova/core';
-import { IPC, type AppConfig, type SteamInfo, type GameStatus, type ModInfo, type ModInstallOptions, type GenerateModSpec } from '../shared/ipc';
+import { IPC, type AppConfig, type SteamInfo, type GameStatus, type ModInfo, type ModInstallOptions, type GenerateModSpec, type LibraryMod, type NexusAuth, type NxmEvent } from '../shared/ipc';
 
 // --- Config persistence ---------------------------------------------------
 
@@ -50,11 +55,75 @@ async function saveConfig(): Promise<void> {
 }
 
 const mm = () => new ModManager(app.getPath('userData'));
+const library = () => new ModLibrary(app.getPath('userData'));
 
 function send(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
 }
 const log = (level: 'info' | 'warn' | 'error', message: string) => send(IPC.evLog, { level, message });
+const nxmEvent = (e: NxmEvent) => send(IPC.evNxm, e);
+
+// --- Nexus auth (API key stored encrypted via safeStorage) ----------------
+
+function keyFile(): string {
+  return join(app.getPath('userData'), 'nexus.key');
+}
+
+async function loadApiKey(): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(keyFile());
+    if (safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(raw);
+    return raw.toString('utf8'); // fallback (no OS keychain)
+  } catch {
+    return null;
+  }
+}
+
+async function storeApiKey(key: string): Promise<void> {
+  const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8');
+  await fs.writeFile(keyFile(), data);
+}
+
+let nexusPremium = false;
+let nexusUser: string | null = null;
+
+async function nexusClient(): Promise<NexusClient | null> {
+  const key = await loadApiKey();
+  if (!key) return null;
+  return new NexusClient({ apiKey: key, appVersion: app.getVersion() });
+}
+
+async function nexusAuth(): Promise<NexusAuth> {
+  const client = await nexusClient();
+  if (!client) return { hasKey: false, premium: false, userName: null };
+  try {
+    const v = await client.validate();
+    nexusPremium = v.is_premium;
+    nexusUser = v.name;
+    return { hasKey: true, premium: v.is_premium, userName: v.name };
+  } catch {
+    return { hasKey: true, premium: false, userName: null };
+  }
+}
+
+function toLibraryMod(m: CoreLibraryMod): LibraryMod {
+  return {
+    modName: m.modName,
+    name: m.name,
+    game: m.gameId,
+    source: m.source,
+    version: m.version,
+    author: m.author,
+    summary: m.summary,
+    pictureUrl: m.pictureUrl,
+    layout: m.layout,
+    installable: m.installable,
+    enabled: m.enabled,
+    priority: m.priority,
+    note: m.note,
+    nexus: m.nexus,
+  };
+}
 
 // --- Steam / game status --------------------------------------------------
 
@@ -219,6 +288,165 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.unpackGame, (_e, game: GameId) => unpackGame(game));
   ipcMain.handle(IPC.launchGame, (_e, game: GameId) => launchGame(game));
+
+  // --- Nexus auth ---
+  ipcMain.handle(IPC.getNexusAuth, () => nexusAuth());
+  ipcMain.handle(IPC.setNexusApiKey, async (_e, key: string) => {
+    await storeApiKey(key.trim());
+    const auth = await nexusAuth();
+    log(auth.userName ? 'info' : 'warn', auth.userName ? `Signed in to Nexus as ${auth.userName}${auth.premium ? ' (Premium)' : ''}.` : 'Nexus API key saved but could not validate.');
+    return auth;
+  });
+  ipcMain.handle(IPC.clearNexusApiKey, async () => {
+    await fs.rm(keyFile(), { force: true });
+    nexusPremium = false;
+    nexusUser = null;
+    return { hasKey: false, premium: false, userName: null } satisfies NexusAuth;
+  });
+  ipcMain.handle(IPC.openNexusModsPage, async (_e, game: GameId) => {
+    await shell.openExternal(`https://www.nexusmods.com/${NEXUS_DOMAINS[game]}?tab=popular`);
+  });
+
+  // --- Mod library (enable/disable) ---
+  ipcMain.handle(IPC.libraryList, async (_e, game: GameId) => (await library().list(game)).map(toLibraryMod));
+  ipcMain.handle(IPC.librarySetEnabled, async (_e, game: GameId, modName: string, enabled: boolean) => {
+    const whitePath = await whiteRootFor(game);
+    if (!whitePath) return { ok: false, message: 'Game not found / not unpacked.', mods: (await library().list(game)).map(toLibraryMod) };
+    try {
+      await library().setEnabled(game, modName, enabled, whitePath);
+      log('info', `${enabled ? 'Enabled' : 'Disabled'} "${modName}".`);
+      return { ok: true, message: enabled ? 'Enabled.' : 'Disabled.', mods: (await library().list(game)).map(toLibraryMod) };
+    } catch (err) {
+      log('error', (err as Error).message);
+      return { ok: false, message: (err as Error).message, mods: (await library().list(game)).map(toLibraryMod) };
+    }
+  });
+  ipcMain.handle(IPC.librarySetOrder, async (_e, game: GameId, order: string[]) => {
+    const whitePath = await whiteRootFor(game);
+    if (whitePath) await library().setOrder(game, order, whitePath);
+    return (await library().list(game)).map(toLibraryMod);
+  });
+  ipcMain.handle(IPC.libraryRemove, async (_e, game: GameId, modName: string) => {
+    const whitePath = (await whiteRootFor(game)) ?? '';
+    await library().remove(game, modName, whitePath);
+    return (await library().list(game)).map(toLibraryMod);
+  });
+  ipcMain.handle(IPC.libraryImportFile, async (_e, game: GameId) => {
+    const r = await dialog.showOpenDialog({
+      title: 'Import a mod',
+      properties: ['openFile'],
+      filters: [{ name: 'Mod archives', extensions: ['zip', '7z', 'rar', 'ncmp'] }],
+    });
+    if (r.canceled) return { ok: false, message: 'Cancelled.', mods: (await library().list(game)).map(toLibraryMod) };
+    try {
+      const mod = await library().importArchive(game, r.filePaths[0]);
+      log('info', `Imported "${mod.name}" (${mod.layout}).`);
+      return { ok: true, message: `Imported "${mod.name}".`, mods: (await library().list(game)).map(toLibraryMod) };
+    } catch (err) {
+      log('error', `Import failed: ${(err as Error).message}`);
+      return { ok: false, message: (err as Error).message, mods: (await library().list(game)).map(toLibraryMod) };
+    }
+  });
+  ipcMain.handle(IPC.nexusInstall, async (_e, game: GameId, modId: number, fileId: number) => {
+    const result = await installFromNexus(game, modId, fileId);
+    return { ...result, mods: (await library().list(game)).map(toLibraryMod) };
+  });
+}
+
+// --- Nexus download + install --------------------------------------------
+
+/** Stream a CDN URL to a temp file, emitting download progress. */
+async function downloadTo(url: string, destFile: string, jobId: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status}`);
+  const total = Number(res.headers.get('content-length') ?? 0);
+  await fs.mkdir(join(destFile, '..'), { recursive: true });
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    chunks.push(Buffer.from(chunk));
+    received += chunk.length;
+    send(IPC.evProgress, { jobId, kind: 'download', current: received, total, message: 'Downloading…' });
+  }
+  await fs.writeFile(destFile, Buffer.concat(chunks));
+}
+
+/** Premium in-app install: resolve the CDN link, download, import to library. */
+async function installFromNexus(game: GameId, modId: number, fileId: number): Promise<{ ok: boolean; message: string }> {
+  const client = await nexusClient();
+  if (!client) return { ok: false, message: 'Add your Nexus API key in Settings first.' };
+  const domain = NEXUS_DOMAINS[game];
+  try {
+    const info = await client.getModInfo(domain, modId);
+    const links = await client.getDownloadLink(domain, modId, fileId);
+    const files = await client.getModFiles(domain, modId);
+    const file = files.files.find((f) => f.file_id === fileId);
+    const tmp = join(app.getPath('temp'), `open-nova-${modId}-${fileId}-${file?.file_name ?? 'mod.zip'}`);
+    nxmEvent({ status: 'downloading', game, message: `Downloading ${info.name}…` });
+    await downloadTo(links[0].URI, tmp, `nexus-${modId}`);
+    const mod = await library().importArchive(game, tmp, {
+      name: info.name,
+      source: 'nexus',
+      version: info.version,
+      author: info.author,
+      summary: info.summary,
+      pictureUrl: info.picture_url ?? undefined,
+      nexus: { domain, modId, fileId },
+    });
+    await fs.rm(tmp, { force: true });
+    nxmEvent({ status: 'installed', game, modName: mod.modName, message: `Imported "${mod.name}".` });
+    log('info', `Imported "${mod.name}" from Nexus.`);
+    return { ok: true, message: `Imported "${mod.name}". Enable it in the Mods tab.` };
+  } catch (err) {
+    const msg =
+      err instanceof NexusError && err.status === 403
+        ? 'This download needs Nexus Premium for in-app install. On the mod page, use "Mod Manager Download" instead.'
+        : (err as Error).message;
+    nxmEvent({ status: 'error', game, message: msg });
+    log('error', `Nexus install failed: ${msg}`);
+    return { ok: false, message: msg };
+  }
+}
+
+/** Handle an nxm:// deep link (the website "Mod Manager Download" button). */
+async function handleNxm(url: string): Promise<void> {
+  try {
+    const p = parseNxmUrl(url);
+    const game = gameIdForNxm(p.domain);
+    if (!game) {
+      log('warn', `nxm link for unsupported game domain "${p.domain}".`);
+      return;
+    }
+    nxmEvent({ status: 'received', game, message: `Received download for ${p.domain} mod ${p.modId}…` });
+    const client = await nexusClient();
+    if (!client) {
+      nxmEvent({ status: 'error', game, message: 'Add your Nexus API key in Settings first.' });
+      return;
+    }
+    if (p.key === undefined || p.expires === undefined) {
+      nxmEvent({ status: 'error', game, message: 'nxm link missing its download grant.' });
+      return;
+    }
+    const links = await client.getDownloadLink(p.domain, p.modId, p.fileId, { key: p.key, expires: p.expires });
+    const info = await client.getModInfo(p.domain, p.modId).catch(() => null);
+    const tmp = join(app.getPath('temp'), `open-nova-${p.modId}-${p.fileId}.archive`);
+    nxmEvent({ status: 'downloading', game, message: `Downloading ${info?.name ?? 'mod'}…` });
+    await downloadTo(links[0].URI, tmp, `nxm-${p.modId}`);
+    const mod = await library().importArchive(game, tmp, {
+      name: info?.name,
+      source: 'nexus',
+      version: info?.version,
+      author: info?.author,
+      summary: info?.summary,
+      pictureUrl: info?.picture_url ?? undefined,
+      nexus: { domain: p.domain, modId: p.modId, fileId: p.fileId },
+    });
+    await fs.rm(tmp, { force: true });
+    nxmEvent({ status: 'installed', game, modName: mod.modName, message: `Imported "${mod.name}". Enable it in the Mods tab.` });
+  } catch (err) {
+    nxmEvent({ status: 'error', message: `nxm install failed: ${(err as Error).message}` });
+    log('error', `nxm install failed: ${(err as Error).message}`);
+  }
 }
 
 async function whiteRootFor(game: GameId): Promise<string | null> {
@@ -330,10 +558,22 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
   return { ok: true, message: 'Launching via Steam…' };
 }
 
-// --- Window ----------------------------------------------------------------
+// --- Window + nxm:// deep-link wiring --------------------------------------
+
+let mainWindow: BrowserWindow | null = null;
+/** nxm urls that arrive before the renderer is ready, replayed on load. */
+const pendingNxm: string[] = [];
+
+function routeNxm(url: string | undefined): void {
+  if (!url || !url.startsWith('nxm://')) return;
+  if (mainWindow && !mainWindow.webContents.isLoading()) handleNxm(url);
+  else pendingNxm.push(url);
+}
+
+const extractNxmUrl = (argv: string[]): string | undefined => argv.find((a) => a.startsWith('nxm://'));
 
 function createWindow(): void {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1100,
     height: 760,
     minWidth: 900,
@@ -347,19 +587,52 @@ function createWindow(): void {
     },
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else win.loadFile(join(__dirname, '../renderer/index.html'));
+  if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  else mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    while (pendingNxm.length) handleNxm(pendingNxm.shift()!);
+  });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
-app.whenReady().then(async () => {
-  await loadConfig();
-  registerIpc();
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+// Single-instance lock: a second launch (e.g. from clicking an nxm:// link)
+// forwards its argv to the running instance instead of starting a new one.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  // Register as the nxm:// protocol handler (dev-mode needs execPath + argv).
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('nxm', process.execPath, [resolvePath(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient('nxm');
+  }
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.on('second-instance', (_e, argv) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    routeNxm(extractNxmUrl(argv)); // Windows/Linux deliver the url in argv
+  });
+
+  app.on('open-url', (_e, url) => routeNxm(url)); // macOS
+
+  app.whenReady().then(async () => {
+    await loadConfig();
+    registerIpc();
+    createWindow();
+    routeNxm(extractNxmUrl(process.argv)); // cold-start with an nxm:// arg
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}

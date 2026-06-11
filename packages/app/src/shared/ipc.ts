@@ -66,7 +66,41 @@ export interface GenerateModSpec {
   outputPath: string;
 }
 
-export type JobKind = 'unpack' | 'repack' | 'install' | 'uninstall' | 'import' | 'generate' | 'decrypt' | 'launch';
+/** A mod in the library (staged; toggled enabled/disabled). */
+export interface LibraryMod {
+  modName: string;
+  name: string;
+  game: GameId;
+  source: 'nexus' | 'local' | 'ncmp';
+  version: string;
+  author: string;
+  summary: string;
+  pictureUrl?: string;
+  layout: 'ncmp' | 'dataRoot' | 'bare' | 'installer' | 'unknown';
+  installable: boolean;
+  enabled: boolean;
+  priority: number;
+  note: string;
+  nexus?: { domain: string; modId: number; fileId: number };
+}
+
+export interface NexusAuth {
+  hasKey: boolean;
+  premium: boolean;
+  userName: string | null;
+  /** present after a download fails for lack of an nxm grant */
+  rateLimited?: boolean;
+}
+
+/** Status pushed to the renderer as an nxm:// install proceeds. */
+export interface NxmEvent {
+  status: 'received' | 'downloading' | 'installed' | 'error';
+  game?: GameId;
+  modName?: string;
+  message: string;
+}
+
+export type JobKind = 'unpack' | 'repack' | 'install' | 'uninstall' | 'import' | 'generate' | 'decrypt' | 'launch' | 'download';
 
 export interface ProgressEvent {
   jobId: string;
@@ -110,9 +144,26 @@ export interface NovaApi {
   unpackGame(game: GameId): Promise<{ ok: boolean; message: string }>;
   launchGame(game: GameId): Promise<{ ok: boolean; message: string }>;
 
+  // Nexus auth
+  getNexusAuth(): Promise<NexusAuth>;
+  setNexusApiKey(key: string): Promise<NexusAuth>;
+  clearNexusApiKey(): Promise<NexusAuth>;
+  openNexusModsPage(game: GameId): Promise<void>;
+
+  // Mod library (enable/disable model)
+  libraryList(game: GameId): Promise<LibraryMod[]>;
+  librarySetEnabled(game: GameId, modName: string, enabled: boolean): Promise<{ ok: boolean; message: string; mods: LibraryMod[] }>;
+  librarySetOrder(game: GameId, orderedModNames: string[]): Promise<LibraryMod[]>;
+  libraryRemove(game: GameId, modName: string): Promise<LibraryMod[]>;
+  /** Open a file picker and import a local .zip/.7z/.rar/.ncmp into the library. */
+  libraryImportFile(game: GameId): Promise<{ ok: boolean; message: string; mods: LibraryMod[] }>;
+  /** Premium in-app install by Nexus mod+file id. */
+  nexusInstall(game: GameId, modId: number, fileId: number): Promise<{ ok: boolean; message: string; mods: LibraryMod[] }>;
+
   // Events
   onProgress(cb: (e: ProgressEvent) => void): () => void;
   onLog(cb: (e: LogEvent) => void): () => void;
+  onNxm(cb: (e: NxmEvent) => void): () => void;
 }
 
 declare global {
@@ -140,6 +191,17 @@ export const IPC = {
   unpackArchive: 'archive:unpack',
   unpackGame: 'game:unpack',
   launchGame: 'game:launch',
+  getNexusAuth: 'nexus:getAuth',
+  setNexusApiKey: 'nexus:setKey',
+  clearNexusApiKey: 'nexus:clearKey',
+  openNexusModsPage: 'nexus:openPage',
+  libraryList: 'library:list',
+  librarySetEnabled: 'library:setEnabled',
+  librarySetOrder: 'library:setOrder',
+  libraryRemove: 'library:remove',
+  libraryImportFile: 'library:importFile',
+  nexusInstall: 'nexus:install',
   evProgress: 'event:progress',
   evLog: 'event:log',
+  evNxm: 'event:nxm',
 } as const;
