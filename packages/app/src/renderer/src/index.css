@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Display typeface (single Extra-Bold weight, mapped across the whole weight
+   range so every display text style uses it). */
+@font-face {
+  font-family: 'Nova Display';
+  src: url('./assets/fonts/font.otf') format('opentype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* Cool crystalline sky: soft white glow up top fading into pale steel. */
+  background: radial-gradient(1100px 720px at 50% -18%, #ffffff 0%, #eef2f8 58%, #e4eaf2 100%);
+  background-attachment: fixed;
+  color: theme('colors.nova.text');
+  font-family: theme('fontFamily.sans');
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* thin crystal scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: theme('colors.nova.border');
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: theme('colors.nova.accent');
+}
+
+@layer components {
+  .panel {
+    @apply bg-nova-panel border border-nova-border rounded-xl shadow-sm;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+           border border-nova-border bg-nova-panel2 text-nova-text transition
+           hover:border-nova-accent hover:text-nova-accent disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply border-transparent bg-nova-accent text-white shadow-sm
+           hover:bg-nova-accent hover:text-white hover:brightness-95;
+  }
+  .btn-danger {
+    @apply hover:border-nova-bad hover:text-nova-bad;
+  }
+  /* The marquee per-game "Play" CTA: beveled HUD shape, crystal cyan->chaos
+     violet gradient, soft glow, and a light-sweep on hover. */
+  .btn-play {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+    /* Per-game colours are injected via CSS vars (see GameScreen); these
+       defaults are the XIII-2 pink->purple. */
+    background-image: linear-gradient(
+      110deg,
+      var(--play-a, #ef5fb0) 0%,
+      var(--play-b, #d6489e) 48%,
+      var(--play-c, #7a3fd0) 112%
+    );
+    color: #fff;
+    letter-spacing: 0.08em;
+    filter: drop-shadow(0 6px 15px var(--play-glow, rgba(214, 72, 158, 0.42)));
+    transition: filter 0.22s ease, transform 0.1s ease;
+  }
+  .btn-play::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.4) 50%, transparent 65%);
+    transform: translateX(-130%);
+    transition: transform 0.6s ease;
+  }
+  .btn-play:hover {
+    filter: drop-shadow(0 9px 24px var(--play-glow2, rgba(122, 63, 208, 0.5))) brightness(1.07);
+  }
+  .btn-play:hover::before {
+    transform: translateX(130%);
+  }
+  .btn-play:active {
+    transform: translateY(1px);
+  }
+  .btn-play:disabled {
+    filter: grayscale(0.45) opacity(0.5);
+    pointer-events: none;
+  }
+  /* Secondary HUD button (e.g. Settings) — shares the Play button's bevel but
+     stays quiet: faint steel fill, crystal-cyan on hover. */
+  .btn-hud {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    background: #eef3f9;
+    color: #5f6b8a;
+    letter-spacing: 0.06em;
+    transition: background 0.18s ease, color 0.18s ease, filter 0.18s ease, transform 0.1s ease;
+  }
+  .btn-hud:hover {
+    background: rgba(12, 155, 196, 0.12);
+    color: #0c9bc4;
+    filter: drop-shadow(0 4px 12px rgba(12, 155, 196, 0.22));
+  }
+  .btn-hud:active {
+    transform: translateY(1px);
+  }
+  .field {
+    @apply w-full rounded-lg border border-nova-border bg-nova-bg/60 px-3 py-2 text-sm text-nova-text
+           placeholder:text-nova-muted focus:border-nova-accent focus:outline-none;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}

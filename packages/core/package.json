@@ -1,0 +1,26 @@
+{
+  "name": "@open-nova/core",
+  "version": "0.1.0",
+  "description": "Cross-platform core library for the FINAL FANTASY XIII trilogy archive/mod format (open reimplementation of Nova Chrysalia)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node test/run.mjs",
+    "test:crypto": "node --import tsx test/crypto.vectors.test.mjs"
+  },
+  "license": "GPL-3.0-or-later",
+  "optionalDependencies": {
+    "7z-wasm": "^1.2.0",
+    "node-unrar-js": "^2.0.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

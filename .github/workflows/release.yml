@@ -1,0 +1,57 @@
+name: Build/release
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**.md"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        # libfuse2 is needed by the AppImage tooling on ubuntu 24.04 (no other
+        # native deps — @open-nova/core is bundled and the optional 7z/rar
+        # extractors are WASM).
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Dependencies
+        run: bun install
+
+      - name: Build App
+        # Builds @open-nova/core (bundled from source) + the renderer/main via
+        # electron-vite, then packages a Linux AppImage with electron-builder.
+        # AppImage only (the build config also lists flatpak, which needs
+        # flatpak-builder that isn't present in CI).
+        run: bun run dist
+
+      - name: List generated files
+        run: ls -R packages/app/release/ || true
+
+      - name: Get Package Version
+        id: package-version
+        run: |
+          echo "current-version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          target_commitish: master
+          tag_name: ${{ steps.package-version.outputs.current-version }}
+          files: |
+            packages/app/release/**/*.AppImage
+            packages/app/release/**/latest-linux.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,64 @@
+/**
+ * Validates the TypeScript cipher byte-for-byte against known-good test
+ * vectors (key schedule, encryption, decryption, and round-trip).
+ *
+ * Run: node --import tsx packages/core/test/crypto.vectors.test.mjs
+ */
+import { generateXorTable, encryptBlocks, decryptBlocks } from '../src/crypto/cipher.ts';
+
+function hex(buf) {
+  return Buffer.from(buf).toString('hex').toUpperCase();
+}
+function fromHex(s) {
+  return new Uint8Array(Buffer.from(s, 'hex'));
+}
+
+// --- Ground-truth vectors for key schedule, encryption, and decryption ---
+const SEED = new Uint8Array([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
+const XORTABLE_EXPECTED =
+  '68D836D222282C5E083A121BAEC8DCD628225B8766EB4F32C8AAC7A400998FFBE855E63703FDCDE988AD7F1710F10591A8637E7550B51DD548F2774B928A942968BB5779DBB4E6CF08A9B65E4988810F284D91D96EA9874DC881D63F2A4FA683E888303FD38B3F9288ACF23B20BB3DDBA85EBD2BA1A7344848D9B2DA25460769683E7E45BD5E240D0838775BB2D9B541281854C97B408D48C878A4EE6A42C26AE85B36A9164CCB1588CB0F4E717CF86CA8F94E86366EDA2048E08A9F102744A46861B61D53C3543508E78F949FD0A70A2883CFE61D134735C88F0D82955F630AE8CE438AEBDDF033880A53B39955B403A8349F8000AC851248071C83025C9C5C68248C8F0CCC0DCF';
+const PLAIN_HEX = '030A11181F262D343B424950575E656C737A81888F969DA4ABB2B9C0C7CED5DC';
+const CIPHER_HEX = 'B1A0B1C464C20707AB93E8203C165F6B11291553E55F03281ECC338C62666315';
+
+let pass = 0;
+let fail = 0;
+function check(name, got, want) {
+  if (got === want) {
+    pass++;
+    console.log(`  ✓ ${name}`);
+  } else {
+    fail++;
+    console.log(`  ✗ ${name}`);
+    console.log(`      expected: ${want}`);
+    console.log(`      got:      ${got}`);
+  }
+}
+
+console.log('Crypto vector validation:');
+
+// 1) Key schedule
+const table = generateXorTable(SEED);
+check('generateXorTable(0123456789ABCDEF)', hex(table), XORTABLE_EXPECTED);
+
+// 2) Encryption matches the expected ciphertext
+const plain = fromHex(PLAIN_HEX);
+const cipher = encryptBlocks(table, plain, plain.length / 8);
+check('encryptBlocks', hex(cipher), CIPHER_HEX);
+
+// 3) Decryption recovers the original plaintext
+const decrypted = decryptBlocks(table, fromHex(CIPHER_HEX), CIPHER_HEX.length / 16);
+check('decryptBlocks', hex(decrypted), PLAIN_HEX);
+
+// 4) Round-trip on random data of varying block counts
+import { randomBytes } from 'node:crypto';
+for (const blocks of [1, 2, 5, 17, 64]) {
+  const seed = new Uint8Array(randomBytes(8));
+  const t = generateXorTable(seed);
+  const data = new Uint8Array(randomBytes(blocks * 8));
+  const enc = encryptBlocks(t, data, blocks);
+  const dec = decryptBlocks(t, enc, blocks);
+  check(`round-trip ${blocks} block(s)`, hex(dec), hex(data));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail === 0 ? 0 : 1);
