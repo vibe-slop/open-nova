@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "dist": "cd packages/app && bun run dist:appimage"
   },
   "license": "GPL-3.0-or-later"
 }
