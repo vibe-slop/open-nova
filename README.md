@@ -53,12 +53,18 @@ npm run -w @open-nova/app dev    # launch the desktop app (needs a display)
 node --import tsx packages/cli/bin/open-nova.mjs detect   # try the CLI
 ```
 
+### Validated on real hardware ✅
+Tested against a real FFXIII-2 install on a Steam Deck: the engine **decrypts
+the actual `filelistu.win32.bin`** (checksum verified), parses all **14,381
+asset paths**, and unpacks real files from `white_imgu.win32.bin` — they
+decompress to byte-exact sizes and carry valid container magic (e.g. `WPD\0`).
+This surfaced and fixed a seed sign-extension bug that synthetic tests missed.
+
 ### Not yet validated / not yet built
-- Real game-file validation (byte-identity vs the original tool) — do this on a
-  Steam Deck / real install. The engine round-trips its own output and matches
-  DLL crypto vectors, but no real `filelist`/`white_img` was available here.
 - In-container texture mods (WPD/IMGB repack) and ZTR/SCD tooling.
-- The bulk game unpacker and `steam://` launch path need on-device testing.
+- The bulk game unpacker (writing the full unpacked tree) and `steam://` launch
+  path need a full on-device run.
+- Live Nexus download + the `nxm://` handler want an end-to-end run on the Deck.
 
 ## How it was built
 
