@@ -16,6 +16,7 @@ export * from './archive/extract.js';
 export * from './game/gameinfo.js';
 export * from './game/steam.js';
 export * from './game/pe-patch.js';
+export * from './game/launcher.js';
 // Mods
 export * from './mods/ini.js';
 export * from './mods/ncmp.js';

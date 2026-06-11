@@ -13,8 +13,7 @@ import {
   unpackArchive,
   decryptFilelist,
   encryptFilelist,
-  isLargeAddressAware,
-  patchLargeAddressAware,
+  patchExeForLaunch,
   NexusClient,
   NexusError,
   parseNxmUrl,
@@ -536,19 +535,29 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
   const g = getGameById(game);
   if (!install || !g) return { ok: false, message: 'Game not found.' };
 
-  // Best-effort Large-Address-Aware patch of the on-disk exe.
+  // Patch the on-disk exe before launch. In unpacked mode this includes the
+  // critical unpacked-mode branch override (so the game reads loose modded
+  // files), plus text-language; otherwise just Large-Address-Aware. Always
+  // re-patch from the pristine .original so toggling settings is clean.
   try {
     const exe = join(install, ...g.exeRel.split('/'));
     if (await exists(exe)) {
-      const buf = await fs.readFile(exe);
-      if (!isLargeAddressAware(buf)) {
-        await fs.copyFile(exe, exe + '.original').catch(() => {});
-        await fs.writeFile(exe, patchLargeAddressAware(buf));
-        log('info', 'Applied Large-Address-Aware patch.');
+      const orig = exe + '.original';
+      if (!(await exists(orig))) await fs.copyFile(exe, orig); // keep pristine backup
+      const pristine = await fs.readFile(orig);
+      const unpacked = config.filesystemMode === 'unpacked' && (await exists(join(install, g.dataRoot, UNPACKED_MARKER)));
+      const patched = patchExeForLaunch(pristine, g.number, {
+        unpacked,
+        textLanguage: config.textLanguage,
+      });
+      await fs.writeFile(exe, patched);
+      log('info', unpacked ? 'Patched exe: unpacked mode + LAA + language.' : 'Patched exe: LAA + language.');
+      if (config.filesystemMode === 'unpacked' && !unpacked) {
+        log('warn', 'Unpacked mode requested but game is not unpacked yet — launching packed. Run "Unpack game data" first.');
       }
     }
   } catch (err) {
-    log('warn', `LAA patch skipped: ${(err as Error).message}`);
+    log('warn', `exe patch skipped: ${(err as Error).message}`);
   }
 
   const url = `steam://rungameid/${g.steamAppId}`;
