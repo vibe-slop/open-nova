@@ -1,0 +1,19 @@
+{
+  "name": "@open-nova/cli",
+  "version": "0.1.0",
+  "description": "open-nova command-line tools (Steam Deck terminal friendly)",
+  "type": "module",
+  "bin": {
+    "open-nova": "./bin/open-nova.mjs"
+  },
+  "scripts": {
+    "start": "node bin/open-nova.mjs"
+  },
+  "dependencies": {
+    "@open-nova/core": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  },
+  "license": "GPL-3.0-or-later"
+}

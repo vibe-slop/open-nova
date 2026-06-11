@@ -9,6 +9,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { packArchive, unpackArchive, repackArchive } from '../src/archive/whitebin.ts';
+import { decryptFilelist, isFilelistEncrypted } from '../src/crypto/filelist-crypto.ts';
 
 let pass = 0;
 let fail = 0;
@@ -57,6 +58,9 @@ for (const gameCode of [1, 2, 3]) {
 for (const gameCode of [2, 3]) {
   const inputs = sampleFiles();
   const { filelist, img } = packArchive(inputs, gameCode, { encrypted: true, chunkCount: 2 });
+  check(`encrypted: magic tag present gc${gameCode}`, isFilelistEncrypted(filelist));
+  const dec = decryptFilelist(filelist);
+  check(`encrypted: checksum verifies gc${gameCode}`, dec.checksumOk === true);
   const { files } = unpackArchive(filelist, img, gameCode);
   check(`encrypted pack->unpack gc${gameCode}`, eqFiles(inputs, files));
 }

@@ -10,8 +10,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test 'test/**/*.test.mjs'",
-    "test:crypto": "tsx test/crypto.vectors.test.mjs"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node test/run.mjs",
+    "test:crypto": "node --import tsx test/crypto.vectors.test.mjs"
   },
   "license": "GPL-3.0-or-later",
   "devDependencies": {

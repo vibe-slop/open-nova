@@ -126,15 +126,17 @@ export function encryptFilelist(plain: Uint8Array): Uint8Array {
   writeU32BE(prepped, SIZE_OFFSET, bodyLen);
   writeU32LE(prepped, prepped.length - 16, bodyLen);
 
-  // ProcessFilelist('e'): num = BE@0x10 + 8 = bytes to encrypt; checksum the
-  // body and store it in the 4-byte tail at 0x20 + (num-8); then encrypt.
+  // ProcessFilelist('e'): num = BE@0x10 + 8 = bytes to encrypt. The encrypted
+  // region's last 8 bytes are [LE body-size @ num-8][checksum @ num-4]; decrypt
+  // re-derives the size at offset 0x10 and verifies the checksum at +4 after it.
   const num = (bodyLen + 8) >>> 0;
   const seed = deriveSeed(prepped);
   const table = generateXorTable(seed);
 
-  // Compute + write checksum tail before encrypting (over num-8 bytes).
+  // Checksum over the body (num-8 bytes); stored in the last 4 bytes of the
+  // encrypted region (the LE body-size at num-8 is left intact).
   const checksum = computeChecksum(prepped, HEADER, (num - 8) / 4);
-  writeU32LE(prepped, HEADER + num - 8, checksum);
+  writeU32LE(prepped, HEADER + num - 4, checksum);
 
   const body = prepped.subarray(HEADER, HEADER + num);
   const encBody = encryptBlocks(table, body, num / 8);
