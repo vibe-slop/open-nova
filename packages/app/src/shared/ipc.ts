@@ -22,6 +22,18 @@ export interface SteamInfo {
   games: GameStatus[];
 }
 
+/** Pre-flight info for unpacking a game: size estimate vs. free disk space. */
+export interface UnpackPlan {
+  installed: boolean;
+  unpacked: boolean;
+  /** Estimated size of the unpacked loose tree, in bytes. */
+  estimateBytes: number;
+  /** Free space on the install drive, in bytes. */
+  freeBytes: number;
+  /** True if there's comfortably enough room (estimate + headroom). */
+  sufficient: boolean;
+}
+
 export interface AppConfig {
   selectedGame: GameId;
   filesystemMode: 'unpacked' | 'packed';
@@ -141,7 +153,10 @@ export interface NovaApi {
   unpackArchive(filelistPath: string, imgPath: string, outDir: string, game: GameId): Promise<{ ok: boolean; fileCount: number }>;
 
   // Game ops
-  unpackGame(game: GameId): Promise<{ ok: boolean; message: string }>;
+  /** Size estimate + free-space check before unpacking (for the first-run gate). */
+  getUnpackPlan(game: GameId): Promise<UnpackPlan>;
+  /** Unpack the game's archives to a loose tree. `force` overrides the disk-space guard. */
+  unpackGame(game: GameId, force?: boolean): Promise<{ ok: boolean; message: string }>;
   launchGame(game: GameId): Promise<{ ok: boolean; message: string }>;
 
   // Nexus auth
@@ -189,6 +204,7 @@ export const IPC = {
   decryptFilelist: 'archive:decryptFilelist',
   encryptFilelist: 'archive:encryptFilelist',
   unpackArchive: 'archive:unpack',
+  unpackPlan: 'game:unpackPlan',
   unpackGame: 'game:unpack',
   launchGame: 'game:launch',
   getNexusAuth: 'nexus:getAuth',

@@ -67,7 +67,7 @@ export function ModManagerTab({ game }: { game: GameId }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="space-y-5">
       <NexusBar game={game} auth={auth} onAuth={setAuth} />
 
       <Panel
@@ -115,8 +115,7 @@ export function ModManagerTab({ game }: { game: GameId }) {
 
       <p className="text-center text-xs text-nova-muted">
         Load order matters for FFXIII mods: mods <span className="text-nova-text">lower in the list</span> are applied last and
-        win file conflicts. Use ▲▼ to reorder — changes re-apply instantly and reversibly. Enabling needs the game unpacked
-        (Launch → Unpack game data).
+        win file conflicts. Use ▲▼ to reorder — changes apply instantly and reversibly.
       </p>
     </div>
   );

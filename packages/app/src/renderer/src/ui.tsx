@@ -67,6 +67,23 @@ export function Select({ value, onChange, options }: {
   );
 }
 
+export function ProgressBar({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-nova-border">
+      <div className="h-full rounded-full bg-nova-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/** Human byte size (GB/MB), or an em-dash when unknown. */
+export function fmtBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '—';
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button

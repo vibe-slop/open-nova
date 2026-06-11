@@ -11,6 +11,7 @@ import {
   ModManager,
   ModLibrary,
   unpackArchive,
+  parseFilelist,
   decryptFilelist,
   encryptFilelist,
   patchExeForLaunch,
@@ -22,7 +23,7 @@ import {
   type GameId,
   type LibraryMod as CoreLibraryMod,
 } from '@open-nova/core';
-import { IPC, type AppConfig, type SteamInfo, type GameStatus, type ModInfo, type ModInstallOptions, type GenerateModSpec, type LibraryMod, type NexusAuth, type NxmEvent } from '../shared/ipc';
+import { IPC, type AppConfig, type SteamInfo, type GameStatus, type ModInfo, type ModInstallOptions, type GenerateModSpec, type LibraryMod, type NexusAuth, type NxmEvent, type UnpackPlan } from '../shared/ipc';
 
 // --- Config persistence ---------------------------------------------------
 
@@ -285,7 +286,8 @@ function registerIpc(): void {
     return { ok: true, fileCount: files.length };
   });
 
-  ipcMain.handle(IPC.unpackGame, (_e, game: GameId) => unpackGame(game));
+  ipcMain.handle(IPC.unpackPlan, (_e, game: GameId) => getUnpackPlan(game));
+  ipcMain.handle(IPC.unpackGame, (_e, game: GameId, force?: boolean) => unpackGame(game, force ?? false));
   ipcMain.handle(IPC.launchGame, (_e, game: GameId) => launchGame(game));
 
   // --- Nexus auth ---
@@ -479,7 +481,7 @@ async function readDirToMap(dir: string): Promise<Record<string, Buffer>> {
  * loose-file tree, then write the unpacked marker. Reuses the validated archive
  * layer. NEEDS validation on a real Steam Deck install (see ARCHITECTURE.md).
  */
-async function unpackGame(game: GameId): Promise<{ ok: boolean; message: string }> {
+async function unpackGame(game: GameId, force = false): Promise<{ ok: boolean; message: string }> {
   const install = await resolveInstall(game);
   const g = getGameById(game);
   if (!install || !g) return { ok: false, message: 'Game not found.' };
@@ -487,6 +489,20 @@ async function unpackGame(game: GameId): Promise<{ ok: boolean; message: string 
 
   const pairs = await findArchivePairs(root);
   if (pairs.length === 0) return { ok: false, message: 'No filelist/white_img pairs found.' };
+
+  // Disk-space guard: estimate the unpacked footprint and refuse if it won't fit
+  // (unless the user explicitly forces it past the warning). Prevents a
+  // half-finished unpack that fills the drive.
+  if (!force) {
+    const estimate = await estimateUnpackSize(pairs, g.number);
+    const free = await freeSpaceFor(root);
+    const needed = estimate * 1.05 + 256 * 1024 * 1024; // headroom for block rounding + setup file
+    if (free > 0 && free < needed) {
+      const msg = `Not enough disk space: unpacking needs ~${fmtGB(needed)}, but only ${fmtGB(free)} is free on the game drive.`;
+      log('warn', msg);
+      return { ok: false, message: msg };
+    }
+  }
 
   let done = 0;
   for (const { filelist, img } of pairs) {
@@ -542,6 +558,51 @@ async function firstTimeSetup(whiteRoot: string): Promise<void> {
   } catch (err) {
     log('warn', `first-time setup: ${(err as Error).message}`);
   }
+}
+
+/** Sum of every entry's uncompressed size across the given archive pairs (bytes). */
+async function estimateUnpackSize(pairs: { filelist: string; img: string }[], gameNumber: 1 | 2 | 3): Promise<number> {
+  let total = 0;
+  for (const { filelist } of pairs) {
+    try {
+      const fl = parseFilelist(await fs.readFile(filelist), gameNumber);
+      for (const f of fl.files) total += f.uncmpSize >>> 0;
+    } catch {
+      /* unreadable filelist — skip its contribution to the estimate */
+    }
+  }
+  return total;
+}
+
+/** Free bytes on the filesystem holding `p` (the install drive — may be an SD card). */
+async function freeSpaceFor(p: string): Promise<number> {
+  try {
+    const st = await fs.statfs(p);
+    return st.bavail * st.bsize;
+  } catch {
+    return 0; // unknown — caller treats 0 as "can't determine, don't block"
+  }
+}
+
+function fmtGB(bytes: number): string {
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+/** Pre-flight plan for the first-run unpack gate: size estimate vs. free space + status. */
+async function getUnpackPlan(game: GameId): Promise<UnpackPlan> {
+  const empty: UnpackPlan = { installed: false, unpacked: false, estimateBytes: 0, freeBytes: 0, sufficient: false };
+  const install = await resolveInstall(game);
+  const g = getGameById(game);
+  if (!install || !g) return empty;
+  const root = join(install, g.dataRoot);
+  const installed = await exists(install);
+  const unpacked = await exists(join(root, UNPACKED_MARKER));
+  const pairs = await findArchivePairs(root);
+  const estimateBytes = await estimateUnpackSize(pairs, g.number);
+  const freeBytes = await freeSpaceFor(root);
+  const needed = estimateBytes * 1.05 + 256 * 1024 * 1024;
+  const sufficient = freeBytes === 0 || freeBytes >= needed;
+  return { installed, unpacked, estimateBytes, freeBytes, sufficient };
 }
 
 async function findArchivePairs(root: string): Promise<{ filelist: string; img: string }[]> {

@@ -3,7 +3,7 @@
  * Electron/preload. Installed onto window.nova only when the real bridge is
  * absent. Lets the UI be developed and visually checked without a game install.
  */
-import type { NovaApi, AppConfig, SteamInfo, ModInfo, GameId, LibraryMod, NexusAuth } from '../../shared/ipc';
+import type { NovaApi, AppConfig, SteamInfo, ModInfo, GameId, LibraryMod, NexusAuth, ProgressEvent } from '../../shared/ipc';
 
 let config: AppConfig = {
   selectedGame: 'XIII-2',
@@ -47,10 +47,14 @@ const libMods: Record<GameId, LibraryMod[]> = {
 
 const delay = <T>(v: T, ms = 250) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
+const progressCbs = new Set<(e: ProgressEvent) => void>();
+
 export const mockApi: NovaApi = {
   getConfig: () => delay(config),
   setConfig: (patch) => delay((config = { ...config, ...patch })),
-  detectSteam: () => delay(steam),
+  // Return a fresh object each call (the real backend does), so React re-renders
+  // after unpack flips a game's `unpacked` flag.
+  detectSteam: () => delay({ ...steam, games: steam.games.map((g) => ({ ...g })) }),
   setGamePath: (game, p) => {
     const g = steam.games.find((x) => x.id === game);
     if (g) { g.installPath = p; g.installed = true; }
@@ -67,7 +71,25 @@ export const mockApi: NovaApi = {
   decryptFilelist: () => delay({ ok: true, checksumOk: true }),
   encryptFilelist: () => delay({ ok: true }),
   unpackArchive: () => delay({ ok: true, fileCount: 1234 }),
-  unpackGame: () => delay({ ok: true, message: 'Unpacked (mock).' }, 800),
+  getUnpackPlan: (game) => {
+    const g = steam.games.find((x) => x.id === game);
+    return delay({
+      installed: !!g?.installed,
+      unpacked: !!g?.unpacked,
+      estimateBytes: 32 * 1024 ** 3,
+      freeBytes: 96 * 1024 ** 3,
+      sufficient: true,
+    });
+  },
+  unpackGame: async (game) => {
+    for (let i = 1; i <= 8; i++) {
+      await delay(null, 220);
+      progressCbs.forEach((cb) => cb({ jobId: 'unpackGame', kind: 'unpack', current: i, total: 8, message: `archive ${i}` }));
+    }
+    const g = steam.games.find((x) => x.id === game);
+    if (g) g.unpacked = true;
+    return { ok: true, message: 'Unpacked (mock).' };
+  },
   launchGame: () => delay({ ok: true, message: 'Launching via Steam…' }),
 
   getNexusAuth: () => delay(auth),
@@ -85,7 +107,10 @@ export const mockApi: NovaApi = {
   libraryImportFile: (game) => delay({ ok: true, message: 'Imported (mock).', mods: libMods[game] ?? [] }),
   nexusInstall: (game) => delay({ ok: true, message: 'Imported (mock).', mods: libMods[game] ?? [] }),
 
-  onProgress: () => () => {},
+  onProgress: (cb) => {
+    progressCbs.add(cb);
+    return () => progressCbs.delete(cb);
+  },
   onLog: () => () => {},
   onNxm: () => () => {},
 };

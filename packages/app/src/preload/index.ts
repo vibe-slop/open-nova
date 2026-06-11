@@ -21,7 +21,8 @@ const api: NovaApi = {
   encryptFilelist: (inPath, outPath) => ipcRenderer.invoke(IPC.encryptFilelist, inPath, outPath),
   unpackArchive: (filelistPath, imgPath, outDir, game) => ipcRenderer.invoke(IPC.unpackArchive, filelistPath, imgPath, outDir, game),
 
-  unpackGame: (game) => ipcRenderer.invoke(IPC.unpackGame, game),
+  getUnpackPlan: (game) => ipcRenderer.invoke(IPC.unpackPlan, game),
+  unpackGame: (game, force) => ipcRenderer.invoke(IPC.unpackGame, game, force),
   launchGame: (game) => ipcRenderer.invoke(IPC.launchGame, game),
 
   getNexusAuth: () => ipcRenderer.invoke(IPC.getNexusAuth),
