@@ -50,7 +50,10 @@ function putU32le(buf: Uint8Array, off: number, v: number): void {
  */
 export function generateXorTable(seedIn: Uint8Array): Uint8Array {
   if (seedIn.length !== 8) throw new Error('seed must be 8 bytes');
-  const seed = seedIn.slice().reverse(); // reverse all 8 bytes
+  // Reverse a COPY. NOTE: Buffer.prototype.slice() is an alias for subarray()
+  // (a view), so slice().reverse() would mutate the caller's bytes in place —
+  // use Uint8Array.from to force a real copy regardless of input type.
+  const seed = Uint8Array.from(seedIn).reverse(); // reverse all 8 bytes
 
   let num = u32le(seed, 0);
   let num2 = u32le(seed, 4);
