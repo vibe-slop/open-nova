@@ -1,6 +1,6 @@
 {
   "name": "@open-nova/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "open-nova command-line tools (Steam Deck terminal friendly)",
   "type": "module",
   "bin": {

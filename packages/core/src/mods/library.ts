@@ -122,6 +122,31 @@ async function findPatcherPayload(dir: string, depth = 0): Promise<string | null
   return null;
 }
 
+/**
+ * Find a nested `.ncmp` pack inside an extracted archive. A common distribution
+ * pattern is a downloaded `.zip` that just wraps a single `.ncmp`; without this
+ * the wrapper extracts to a lone `.ncmp` file that detectMod can't classify.
+ * Returns the path to the first `.ncmp` found (depth-limited).
+ */
+async function findNestedNcmp(dir: string, depth = 0): Promise<string | null> {
+  if (depth > 3) return null;
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const ncmp = entries.find((e) => e.isFile() && e.name.toLowerCase().endsWith('.ncmp'));
+  if (ncmp) return path.join(dir, ncmp.name);
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const found = await findNestedNcmp(path.join(dir, e.name), depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 async function moveContents(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
   for (const e of await fs.readdir(src)) {
@@ -173,12 +198,29 @@ export class ModLibrary {
   async importExtracted(gameId: GameId, extractedDir: string, meta: ImportMeta = {}): Promise<LibraryMod> {
     const name = meta.name ?? path.basename(extractedDir);
 
-    // If this is a Windows `.exe` patcher pack, its real payload lives inside the
-    // sibling PatchData.bin ZIP — unwrap it and treat the inner tree as the mod,
-    // so the patch installs natively instead of being flagged as a Wine-only
-    // manual installer. (Handles both texture-inject and whole-file payloads,
-    // since detectMod re-classifies the unwrapped tree.)
-    let unwrapped: string | null = null;
+    // Unwrap nested payloads so detectMod sees the real mod tree, not a wrapper:
+    //  - a `.ncmp` pack wrapped inside the downloaded archive (a common way mods
+    //    are shared — a `.zip` that just contains a `.ncmp`), or
+    //  - a Windows `.exe` patcher pack whose real payload is a sibling
+    //    PatchData.bin ZIP.
+    // detectMod re-classifies the unwrapped tree either way.
+    const temps: string[] = [];
+    let unwrapNote = '';
+
+    const nestedNcmp = await findNestedNcmp(extractedDir);
+    if (nestedNcmp) {
+      await fs.mkdir(this.tempDir(), { recursive: true });
+      const tmp = await fs.mkdtemp(path.join(this.tempDir(), 'ncmp-'));
+      try {
+        await extractNcmp(nestedNcmp, tmp);
+        extractedDir = tmp;
+        temps.push(tmp);
+        unwrapNote = 'Unwrapped a bundled .ncmp pack. ';
+      } catch {
+        await fs.rm(tmp, { recursive: true, force: true }); // not a usable pack — detect as-is
+      }
+    }
+
     const payload = await findPatcherPayload(extractedDir);
     if (payload) {
       await fs.mkdir(this.tempDir(), { recursive: true });
@@ -186,7 +228,8 @@ export class ModLibrary {
       try {
         await extractNcmp(payload, tmp);
         extractedDir = tmp;
-        unwrapped = tmp;
+        temps.push(tmp);
+        unwrapNote = 'Unwrapped from a Windows patcher (PatchData.bin). ';
       } catch {
         await fs.rm(tmp, { recursive: true, force: true }); // not a usable ZIP — detect as-is
       }
@@ -217,13 +260,13 @@ export class ModLibrary {
         installable: detected.installable,
         enabled: false,
         priority: maxPriority + 1,
-        note: unwrapped ? `Unwrapped from a Windows patcher (PatchData.bin). ${detected.note}` : detected.note,
+        note: unwrapNote ? `${unwrapNote}${detected.note}` : detected.note,
         locked: false,
       };
       await this.writeMeta(mod);
       return mod;
     } finally {
-      if (unwrapped) await fs.rm(unwrapped, { recursive: true, force: true });
+      for (const t of temps) await fs.rm(t, { recursive: true, force: true });
     }
   }
 

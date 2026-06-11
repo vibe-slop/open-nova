@@ -76,6 +76,22 @@ await lib.setEnabled('XIII-2', B.modName, false, white);
 const list = await lib.list('XIII-2');
 check('list returns both mods', list.length === 2 && list.every((m) => !m.enabled));
 
+// Regression: a .ncmp wrapped inside a downloaded .zip must auto-unwrap and
+// detect as a normal Nova pack (not flagged "manual install").
+const ncmpBuf = buildZip([
+  { name: 'modconfig.ini', data: Buffer.from('[Mod]\nName=Wrapped\n') },
+  { name: 'Data/chr/pc/c240/bin/c240.win32.trb', data: Buffer.from('TRB-DATA') },
+]);
+const wrappedZip = buildZip([{ name: 'Wrapped Mod.ncmp', data: ncmpBuf }]);
+const wrappedPath = path.join(tmp, 'wrapped.zip');
+await fs.writeFile(wrappedPath, wrappedZip);
+const C = await lib.importArchive('XIII-2', wrappedPath, { name: 'Wrapped Mod' });
+check('zip-wrapped .ncmp unwraps to installable ncmp layout', C.layout === 'ncmp' && C.installable);
+check('zip-wrapped .ncmp note records the unwrap', /Unwrapped a bundled \.ncmp/.test(C.note));
+await lib.setEnabled('XIII-2', C.modName, true, white);
+check('wrapped .ncmp deploys its Data files', (await r(path.join(white, 'chr/pc/c240/bin/c240.win32.trb'))) === 'TRB-DATA');
+await lib.setEnabled('XIII-2', C.modName, false, white);
+
 await fs.rm(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

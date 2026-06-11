@@ -1,6 +1,6 @@
 {
   "name": "@open-nova/app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "open-nova desktop app (Electron + Vite + React + Tailwind)",
   "type": "module",
   "author": "open-nova contributors",
