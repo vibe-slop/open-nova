@@ -12,6 +12,7 @@ const api: NovaApi = {
   getUnpackPlan: (game) => ipcRenderer.invoke(IPC.unpackPlan, game),
   unpackGame: (game, force) => ipcRenderer.invoke(IPC.unpackGame, game, force),
   launchGame: (game) => ipcRenderer.invoke(IPC.launchGame, game),
+  restoreGame: (game) => ipcRenderer.invoke(IPC.restoreGame, game),
 
   libraryList: (game) => ipcRenderer.invoke(IPC.libraryList, game),
   librarySetEnabled: (game, modName, enabled) => ipcRenderer.invoke(IPC.librarySetEnabled, game, modName, enabled),

@@ -1,7 +1,7 @@
 {
   "name": "open-nova",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Cross-platform open-source mod manager & archive toolkit for the FINAL FANTASY XIII trilogy",
   "workspaces": [
     "packages/*"

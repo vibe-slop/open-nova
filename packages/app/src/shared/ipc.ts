@@ -92,6 +92,8 @@ export interface NovaApi {
   /** Unpack the game's archives to a loose tree. `force` overrides the disk-space guard. */
   unpackGame(game: GameId, force?: boolean): Promise<{ ok: boolean; message: string }>;
   launchGame(game: GameId): Promise<{ ok: boolean; message: string }>;
+  /** Revert the game to its normal packed/vanilla state (restore the exe + clear the unpacked flag). */
+  restoreGame(game: GameId): Promise<{ ok: boolean; message: string }>;
 
   // Mod library (enable/disable model)
   libraryList(game: GameId): Promise<LibraryMod[]>;
@@ -121,6 +123,7 @@ export const IPC = {
   unpackPlan: 'game:unpackPlan',
   unpackGame: 'game:unpack',
   launchGame: 'game:launch',
+  restoreGame: 'game:restore',
   libraryList: 'library:list',
   librarySetEnabled: 'library:setEnabled',
   librarySetOrder: 'library:setOrder',

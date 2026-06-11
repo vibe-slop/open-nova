@@ -74,6 +74,7 @@ export const mockApi: NovaApi = {
     return { ok: true, message: 'Unpacked (mock).' };
   },
   launchGame: () => delay({ ok: true, message: 'Launching via Steam…' }),
+  restoreGame: () => delay({ ok: true, message: 'Restored to normal (mock).' }),
 
   libraryList: (game) => delay(libMods[game] ?? []),
   librarySetEnabled: (game, modName, enabled) => {

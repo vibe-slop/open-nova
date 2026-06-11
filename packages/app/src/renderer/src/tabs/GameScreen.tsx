@@ -50,6 +50,8 @@ export function GameScreen({
 }) {
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   if (!status?.installed) return <InstallPrompt game={game} gameName={gameName} onRefresh={onRefresh} />;
   if (!status.unpacked) return <UnpackGate game={game} gameName={gameName} onDone={onRefresh} />;
@@ -60,6 +62,17 @@ export function GameScreen({
       await window.nova.launchGame(game);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const restore = async () => {
+    setRestoring(true);
+    setRestoreMsg('');
+    try {
+      const r = await window.nova.restoreGame(game);
+      setRestoreMsg(r.message);
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -121,6 +134,22 @@ export function GameScreen({
                 Install: <span className="font-mono text-nova-text">{status.installPath}</span>
               </div>
             )}
+            <div className="col-span-2 mt-1 border-t border-nova-border pt-3">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-xs leading-relaxed text-nova-muted">
+                  Game won't launch or acts up? <span className="text-nova-text">Restore to normal</span> un-patches the
+                  game and turns off unpacked mode. Your mods stay saved and nothing is deleted.
+                </p>
+                <Button variant="danger" onClick={restore} disabled={restoring}>
+                  {restoring ? 'Restoring…' : 'Restore game to normal'}
+                </Button>
+              </div>
+              {restoreMsg && (
+                <div className="mt-2 rounded-lg bg-nova-accent/10 px-3 py-2 text-xs leading-relaxed text-nova-accent">
+                  {restoreMsg}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Panel>

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { promises as fs, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import {
@@ -138,6 +138,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.unpackPlan, (_e, game: GameId) => getUnpackPlan(game));
   ipcMain.handle(IPC.unpackGame, (_e, game: GameId, force?: boolean) => unpackGame(game, force ?? false));
   ipcMain.handle(IPC.launchGame, (_e, game: GameId) => launchGame(game));
+  ipcMain.handle(IPC.restoreGame, (_e, game: GameId) => restoreGame(game));
 
   // --- Mod library (enable/disable) ---
   ipcMain.handle(IPC.libraryList, async (_e, game: GameId) => {
@@ -236,13 +237,60 @@ async function unpackGame(game: GameId, force = false): Promise<{ ok: boolean; m
       }
       log('info', `Unpacked ${files.length} files from ${filelist}.`);
     } catch (err) {
-      log('error', `Failed on ${filelist}: ${(err as Error).message}`);
+      // Stop immediately on any failure — a partial unpack leaves the loose tree
+      // missing resources, which crashes the game in unpacked mode. Don't write
+      // the unpacked marker, so the game stays in its normal packed state.
+      const msg = `Unpacking failed on ${basename(filelist)}: ${(err as Error).message}. The game was only partially unpacked — use "Restore game to normal", then try again.`;
+      log('error', msg);
+      return { ok: false, message: msg };
     }
     send(IPC.evProgress, { jobId: 'unpackGame', kind: 'unpack', current: ++done, total: pairs.length, message: filelist });
   }
   await firstTimeSetup(root);
   await fs.writeFile(join(root, UNPACKED_MARKER), new Date().toISOString());
   return { ok: true, message: `Unpacked ${pairs.length} archive(s).` };
+}
+
+/**
+ * Revert a game to its normal (packed/vanilla) state: restore the original exe
+ * from the `.original` backup (undoing the unpacked-mode / LAA / language patch)
+ * and clear the unpacked flag. The game then reads its original archives again;
+ * any extracted loose files remain on disk but are ignored while packed.
+ */
+async function restoreGame(game: GameId): Promise<{ ok: boolean; message: string }> {
+  const install = await resolveInstall(game);
+  const g = getGameById(game);
+  if (!install || !g) return { ok: false, message: 'Game not found.' };
+
+  const did: string[] = [];
+  try {
+    const exe = join(install, ...g.exeRel.split('/'));
+    const orig = exe + '.original';
+    if (await exists(orig)) {
+      await fs.copyFile(orig, exe);
+      did.push('restored the original game executable');
+    }
+  } catch (err) {
+    log('warn', `restore exe: ${(err as Error).message}`);
+  }
+  try {
+    const marker = join(install, g.dataRoot, UNPACKED_MARKER);
+    if (await exists(marker)) {
+      await fs.rm(marker);
+      did.push('cleared the unpacked flag');
+    }
+  } catch (err) {
+    log('warn', `restore marker: ${(err as Error).message}`);
+  }
+
+  const summary = did.length ? did.join(' and ') : 'nothing needed restoring (already vanilla)';
+  log('info', `Restore ${game}: ${summary}.`);
+  return {
+    ok: true,
+    message:
+      `Restored to normal — ${summary}. The game now reads its original files. The extracted loose files ` +
+      `stay on disk but are ignored while packed; to reclaim that space, use Steam → Verify integrity / Reinstall.`,
+  };
 }
 
 /** Candidate paths to a bundled resource (dev vs packaged). */

@@ -68,7 +68,9 @@ export default function App() {
           })}
         </nav>
 
-        <div className="mt-auto px-3 text-[11px] text-nova-muted">v0.1.0</div>
+        <div className="mt-auto px-3 text-[11px] text-nova-muted">
+          v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
+        </div>
       </aside>
 
       {/* Main */}

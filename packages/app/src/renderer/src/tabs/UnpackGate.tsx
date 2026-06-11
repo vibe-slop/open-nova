@@ -15,6 +15,8 @@ export function UnpackGate({ game, gameName, onDone }: { game: GameId; gameName:
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<ProgressEvent | null>(null);
   const [error, setError] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   useEffect(() => {
     window.nova.getUnpackPlan(game).then(setPlan);
@@ -34,6 +36,17 @@ export function UnpackGate({ game, gameName, onDone }: { game: GameId; gameName:
       else setError(r.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const restore = async () => {
+    setRestoring(true);
+    try {
+      const r = await window.nova.restoreGame(game);
+      setRestoreMsg(r.message);
+      setError('');
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -63,7 +76,17 @@ export function UnpackGate({ game, gameName, onDone }: { game: GameId; gameName:
             risk (an out-of-space unpack can leave the game in a broken state).
           </div>
         )}
-        {error && <div className="mt-3 rounded-lg bg-nova-bad/10 px-3 py-2 text-xs text-nova-bad">{error}</div>}
+        {error && (
+          <div className="mt-3 space-y-2">
+            <div className="rounded-lg bg-nova-bad/10 px-3 py-2 text-xs text-nova-bad">{error}</div>
+            <Button variant="danger" onClick={restore} disabled={restoring}>
+              {restoring ? 'Restoring…' : 'Restore game to normal'}
+            </Button>
+          </div>
+        )}
+        {restoreMsg && (
+          <div className="mt-3 rounded-lg bg-nova-accent/10 px-3 py-2 text-xs leading-relaxed text-nova-accent">{restoreMsg}</div>
+        )}
 
         {busy ? (
           <div className="mt-5 flex flex-col items-center gap-4">
