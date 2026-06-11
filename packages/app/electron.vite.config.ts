@@ -4,7 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // Bundle @open-nova/core (it's TypeScript with no build step); externalize
+    // everything else (electron, node builtins).
+    plugins: [externalizeDepsPlugin({ exclude: ['@open-nova/core'] })],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
@@ -12,7 +14,9 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // Bundle @open-nova/core (it's TypeScript with no build step); externalize
+    // everything else (electron, node builtins).
+    plugins: [externalizeDepsPlugin({ exclude: ['@open-nova/core'] })],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },

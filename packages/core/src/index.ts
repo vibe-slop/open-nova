@@ -22,3 +22,7 @@ export * from './mods/manager.js';
 // Inner container formats
 export * from './formats/wpd.js';
 export * from './formats/trb.js';
+
+// GameId is declared in both gameinfo.ts and manager.ts (identical union);
+// re-export the canonical one to resolve the star-export ambiguity.
+export type { GameId } from './game/gameinfo.js';
