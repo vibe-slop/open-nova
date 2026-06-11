@@ -44,6 +44,14 @@ console.log('Mod layout auto-detection:');
   check('bare maps files as-is', r.files.has('sys/config.bin') && r.files.has('txt/en/strings.ztr'));
 }
 
+// Bare tree with a SINGLE top-level data-root child (must NOT be unwrapped away)
+{
+  const d = await fresh('single-sys');
+  await w(path.join(d, 'sys/only.bin'));
+  const r = await detectMod(d);
+  check('single sys/ dir detected as bare (not unwrapped)', r.layout === 'bare' && r.files.has('sys/only.bin'));
+}
+
 // Windows installer pack
 {
   const d = await fresh('installer');

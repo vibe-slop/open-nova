@@ -11,6 +11,7 @@ export * from './archive/binary.js';
 export * from './archive/zlib.js';
 export * from './archive/filelist.js';
 export * from './archive/whitebin.js';
+export * from './archive/extract.js';
 // Game discovery / launch
 export * from './game/gameinfo.js';
 export * from './game/steam.js';
@@ -21,6 +22,11 @@ export * from './mods/ncmp.js';
 export * from './mods/manager.js';
 export * from './mods/deployment.js';
 export * from './mods/autodetect.js';
+export * from './mods/library.js';
+// Nexus Mods integration
+export * from './nexus/types.js';
+export * from './nexus/nxm.js';
+export * from './nexus/client.js';
 // Inner container formats
 export * from './formats/wpd.js';
 export * from './formats/trb.js';

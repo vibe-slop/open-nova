@@ -78,7 +78,16 @@ export async function detectMod(extractedDir: string): Promise<DetectedMod> {
     const { dirs, files } = await listDir(root);
     if (files.length === 0 && dirs.length === 1) {
       const only = dirs[0];
-      if (DATA_ROOTS.includes(only.toLowerCase()) || NOVA_OVERLAY_DIRS.includes(only)) break;
+      // Stop unwrapping if the single folder is itself meaningful: a data root,
+      // a Nova overlay dir, or a data-root child (e.g. `sys/`) — descending into
+      // it would discard the structure we need.
+      if (
+        DATA_ROOTS.includes(only.toLowerCase()) ||
+        NOVA_OVERLAY_DIRS.includes(only) ||
+        DATA_ROOT_CHILDREN.has(only.toLowerCase())
+      ) {
+        break;
+      }
       root = path.join(root, only);
       continue;
     }
