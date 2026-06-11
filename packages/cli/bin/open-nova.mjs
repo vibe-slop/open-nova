@@ -23,6 +23,9 @@ import {
   encryptFilelist,
   unpackArchive,
   ModManager,
+  unpackTrb,
+  unpackWpd,
+  unpackImgb,
 } from '@open-nova/core';
 
 const args = process.argv.slice(2);
@@ -102,6 +105,29 @@ switch (cmd) {
     break;
   }
 
+  case 'textures': {
+    const [, container, imgbPath, outDir] = pos;
+    if (!container || !imgbPath || !outDir) die('usage: open-nova textures <container.trb|.wpd> <pixels.imgb> <outDir>');
+    const cbuf = await fs.readFile(container);
+    const imgb = await fs.readFile(imgbPath);
+    const isWpd = cbuf.subarray(0, 3).toString('latin1') === 'WPD';
+    const res = isWpd ? unpackWpd(cbuf) : unpackTrb(cbuf);
+    const entries = res.entries ?? res.files ?? [];
+    let count = 0;
+    for (const e of entries) {
+      if (!e.data) continue;
+      const base = String(e.name).replace(/[\\/]/g, '_');
+      for (const tex of unpackImgb(e.data, imgb, base)) {
+        const dest = path.join(outDir, tex.fileName);
+        await fs.mkdir(path.dirname(dest), { recursive: true });
+        await fs.writeFile(dest, tex.dds);
+        count++;
+      }
+    }
+    console.log(`extracted ${count} texture(s) -> ${outDir}`);
+    break;
+  }
+
   case 'mods': {
     const [, sub, name] = pos;
     const game = gameFromFlag();
@@ -135,6 +161,7 @@ Commands:
   decrypt <filelist> [out]                 decrypt a filelist index
   encrypt <filelist> [out]                 re-encrypt a filelist index
   unpack  <filelist> <white_img> <outDir>  extract an archive  (--game=1|2|3)
+  textures <container> <pixels.imgb> <out>  extract textures (.trb/.wpd + .imgb) to DDS
   mods list                                list imported mods   (--game=2)
   mods install <name>                      install a mod        (--game=2)
   mods uninstall <name>                    uninstall a mod      (--game=2)
