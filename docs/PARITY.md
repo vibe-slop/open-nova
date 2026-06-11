@@ -33,7 +33,7 @@ a Steam Deck; **(V)** validated by DLL-derived vectors or self/round-trip tests.
 | Subsystem | Status | Notes |
 |---|---|---|
 | Steam discovery (cross-platform) | ✅ (R) | Verified live on the Deck; prefers the SD-card install over the stub. |
-| Game unpacker (bulk → unpacked tree) | 🟡 (R) | Generic pair-unpacker + first-time-setup (writes `DebugFontTextureDDS` extracted from the DLL). XIII-2 v1.1 DLC-revert / LR filelist-repair edge-quirks not ported. |
+| Game unpacker (bulk → unpacked tree) | 🟡 (R) | Generic pair-unpacker (incl. `white_scr`) + first-time-setup (writes `DebugFontTextureDDS` extracted from the DLL). DLC-revert now handled generically at deploy time (see Mod management). LR filelist-repair edge-quirks not ported. |
 | Launcher: Large-Address-Aware patch | ✅ (R) | On-disk PE patch. |
 | Launcher: unpacked-mode patch | ✅ (R) | **Validated on the real `ffxiii2img.exe`** — patches land on the real JZ branch bytes. The gate for mods loading. |
 | Launcher: text-language patch | ✅ (V) | All 8 languages, exact bytes. |
@@ -52,7 +52,9 @@ a Steam Deck; **(V)** validated by DLL-derived vectors or self/round-trip tests.
 | Mod generator (`.ncmp`) | ✅ (V) | |
 | Texture edit → inject into container | ✅ (R) | CLI `repack-texture` (in-place); validated on real `c001`. Auto-resize-install into ModLibrary is a generator enhancement (🟡). |
 | Whole-container texture/db mods | ✅ | Work today via the overlay (mods ship final files). |
-| External `.bat`/`.exe` installer mods | 🟡 | Detected + flagged; running them needs a Wine/Proton path. |
+| Krisan-Thyme `.exe` patchers (`PatchData.bin`) | ✅ (R) | Leviathan's Tears, Console Content Patch, … — open-nova unwraps the embedded `PatchData.bin` and installs natively (no Wine). Validated on the real packs. *(beyond original)* |
+| Add-file / DLC restoration (filelist register) | ✅ (R) | Computes the canonical `fileCode` from the path (generic, no per-mod data) and repoints the stripped DLC entries; reversible. **Validated end-to-end on the real encrypted XIII-2 filelist** (0→30 DLC entries, checksum OK). In-game appearance is the only human-gated step. |
+| Other plain `.bat`/`.exe` installer mods | 🟡 | Detected + flagged; running an arbitrary installer still needs a Wine/Proton path. |
 
 ## App / distribution
 

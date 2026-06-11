@@ -204,3 +204,43 @@ Ranked for a mod-install MVP:
 Many popular mods ship as **loose files already in the right tree** (or as a
 `.ncmp`), so a v1 that supports unpacked-tree overlay + WPD repack covers most of
 the catalogue without IMGB/ZTR yet.
+
+---
+
+## 6. filelist `fileCode` (the resource index key)
+
+Every filelist entry carries a u32 `fileCode`. The engine resolves a requested
+resource by this code (entries are stored in ascending `fileCode` order, i.e. a
+binary search) in BOTH packed and unpacked modes — the unpacked exe-patch only
+swaps the backing store (loose file vs `white_img` blob), not the requirement
+that a resource be *indexed*. A loose file with no matching entry is never
+requested. (`sys/debug/DebugFontTextureDDS.bin` is a special debug-path read,
+not filelist-mediated — the exception that proves the rule.)
+
+`fileCode` is **not a hash** — it is a deterministic bit-packing of the path
+(reverse-engineered from Surihix's open-source WhiteFilelistManager, verified to
+reproduce 9085/9085 non-stripped `chr/pc` codes in a real XIII-2 filelist). For
+`chr/*` on XIII-2:
+
+```
+fileCode = (category<<23) | (modelID<<13) | (extnID<<8) | mpkID      fileTypeId = 16
+  category : pc=2 exte=4 fa=5 mon=12 npc=13 summon=18 weapon=22   (2nd path segment)
+  modelID  : leading digits of the 3rd segment ("c171" → 171, max 999)
+  extnID   : .imgb=0 .trb=1 .mpk=4
+  mpkID    : _def/plain=0 _rain=1 _snow=2
+```
+
+XIII (game 1) prefixes a `mainType` nibble (`1<<28`) and has no `.mpk`; XIII-LR
+(game 3) drops the `mpk` field. Implemented in `core/src/archive/filecode.ts`.
+
+### DLC restoration (the "Console Content Patch")
+
+The Steam PC release disabled the DLC characters (`c160/c163/c166/c170/c171/
+c172`) by **repointing** their filelist entries' paths to duplicates of
+base-game characters while KEEPING their original `fileCode`s — the data was
+dropped from `white_img`. So restoration is: drop the DLC files loose (the
+patch's `PatchData.bin`, unwrapped by the library), compute each path's
+canonical `fileCode`, find the stripped entry by that code, and repoint it back
+(`core/src/mods/filelist-register.ts`). No per-mod data, fully reversible. The
+community Console Content Patch (`.exe`) and Nova Chrysalia (`Patch_Revert.zip`)
+do the same thing by hardcoding the codes; we compute them.

@@ -74,10 +74,32 @@ export async function extractArchive(archivePath: string, destDir: string): Prom
       return;
     case 'unknown':
     default:
+      // The extension is unrecognised, but some archives ship a ZIP under a
+      // different name (e.g. a patcher's `PatchData.bin`). Sniff the magic and
+      // route a real ZIP to the native reader anyway.
+      if (await startsWithZipMagic(archivePath)) {
+        await extractNcmp(archivePath, destDir);
+        return;
+      }
       throw new Error(
         `unsupported archive type for "${archivePath}" — supported extensions are ` +
           `.zip, .ncmp, .7z, .rar`,
       );
+  }
+}
+
+/** True if the file begins with a local ZIP header (`PK\x03\x04`). */
+async function startsWithZipMagic(filePath: string): Promise<boolean> {
+  let fh: import('node:fs/promises').FileHandle | undefined;
+  try {
+    fh = await fs.open(filePath, 'r');
+    const buf = Buffer.alloc(4);
+    const { bytesRead } = await fh.read(buf, 0, 4, 0);
+    return bytesRead === 4 && buf.readUInt32LE(0) === 0x04034b50;
+  } catch {
+    return false;
+  } finally {
+    await fh?.close();
   }
 }
 

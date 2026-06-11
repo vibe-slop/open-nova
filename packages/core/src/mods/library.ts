@@ -15,8 +15,10 @@ import path from 'node:path';
 import { Deployment, type GameId, type ModProvider } from './deployment.js';
 import { detectMod, type ModLayout } from './autodetect.js';
 import { listContainerInjections } from './texture-inject.js';
+import { reconcileFilelist } from './filelist-register.js';
 import { listBuiltinFixes } from './fixes.js';
 import { extractArchive } from '../archive/extract.js';
+import { extractNcmp } from './ncmp.js';
 
 const META = 'nova-mod.json';
 const CONTENT = 'content';
@@ -73,6 +75,59 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** DLLs that mark a Krisan-Thyme-style FF13 `.exe` patcher pack. */
+const PATCHER_DLLS = ['whitebintools.dll', 'locatefile.dll', 'wpdtool.dll', 'imgblibrary.dll'];
+
+/** True if the file begins with a local ZIP header (`PK\x03\x04`). */
+async function looksLikeZip(p: string): Promise<boolean> {
+  let fh: import('node:fs/promises').FileHandle | undefined;
+  try {
+    fh = await fs.open(p, 'r');
+    const buf = Buffer.alloc(4);
+    const { bytesRead } = await fh.read(buf, 0, 4, 0);
+    return bytesRead === 4 && buf.readUInt32LE(0) === 0x04034b50;
+  } catch {
+    return false;
+  } finally {
+    await fh?.close();
+  }
+}
+
+/**
+ * Detect a Krisan-Thyme-style Windows `.exe` patcher (Leviathan's Tears, the
+ * Console Content Patch, …): a `PatchData.bin` — itself a ZIP of the real
+ * payload — shipped beside `FFXIII2*.exe` + `WhiteBinTools.dll`/`LocateFile.dll`.
+ * The `.exe` only repacks the game archives on Windows; everything it would
+ * apply lives inside PatchData.bin, so we can install it natively. Returns the
+ * absolute path to the PatchData.bin ZIP, or null. Searches a few levels deep to
+ * tolerate a wrapper folder.
+ */
+async function findPatcherPayload(dir: string, depth = 0): Promise<string | null> {
+  if (depth > 3) return null;
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const fileNames = entries.filter((e) => e.isFile()).map((e) => e.name);
+  const lower = fileNames.map((f) => f.toLowerCase());
+  const payloadName = fileNames[lower.indexOf('patchdata.bin')];
+  const hasSignature =
+    lower.some((f) => f.endsWith('.exe')) || PATCHER_DLLS.some((d) => lower.includes(d));
+  if (payloadName && hasSignature) {
+    const p = path.join(dir, payloadName);
+    if (await looksLikeZip(p)) return p;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const found = await findPatcherPayload(path.join(dir, e.name), depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 async function moveContents(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
   for (const e of await fs.readdir(src)) {
@@ -122,36 +177,60 @@ export class ModLibrary {
 
   /** Stage an already-extracted directory as a library mod. */
   async importExtracted(gameId: GameId, extractedDir: string, meta: ImportMeta = {}): Promise<LibraryMod> {
-    const detected = await detectMod(extractedDir);
     const name = meta.name ?? path.basename(extractedDir);
-    const modName = safeName(name);
-    const dir = this.modDir(gameId, modName);
-    await fs.rm(dir, { recursive: true, force: true });
-    await fs.mkdir(dir, { recursive: true });
-    // Move the detected content root into content/.
-    await moveContents(detected.contentRoot, path.join(dir, CONTENT));
 
-    const enabledMods = (await this.list(gameId)).filter((m) => m.enabled);
-    const maxPriority = enabledMods.reduce((m, x) => Math.max(m, x.priority), 0);
+    // If this is a Windows `.exe` patcher pack, its real payload lives inside the
+    // sibling PatchData.bin ZIP — unwrap it and treat the inner tree as the mod,
+    // so the patch installs natively instead of being flagged as a Wine-only
+    // manual installer. (Handles both texture-inject and whole-file payloads,
+    // since detectMod re-classifies the unwrapped tree.)
+    let unwrapped: string | null = null;
+    const payload = await findPatcherPayload(extractedDir);
+    if (payload) {
+      await fs.mkdir(this.tempDir(), { recursive: true });
+      const tmp = await fs.mkdtemp(path.join(this.tempDir(), 'unwrap-'));
+      try {
+        await extractNcmp(payload, tmp);
+        extractedDir = tmp;
+        unwrapped = tmp;
+      } catch {
+        await fs.rm(tmp, { recursive: true, force: true }); // not a usable ZIP — detect as-is
+      }
+    }
 
-    const mod: LibraryMod = {
-      modName,
-      gameId,
-      name,
-      source: meta.source ?? 'local',
-      version: meta.version ?? '',
-      author: meta.author ?? '',
-      summary: meta.summary ?? '',
-      pictureUrl: meta.pictureUrl,
-      nexus: meta.nexus,
-      layout: detected.layout,
-      installable: detected.installable,
-      enabled: false,
-      priority: maxPriority + 1,
-      note: detected.note,
-    };
-    await this.writeMeta(mod);
-    return mod;
+    try {
+      const detected = await detectMod(extractedDir);
+      const modName = safeName(name);
+      const dir = this.modDir(gameId, modName);
+      await fs.rm(dir, { recursive: true, force: true });
+      await fs.mkdir(dir, { recursive: true });
+      // Move the detected content root into content/.
+      await moveContents(detected.contentRoot, path.join(dir, CONTENT));
+
+      const enabledMods = (await this.list(gameId)).filter((m) => m.enabled);
+      const maxPriority = enabledMods.reduce((m, x) => Math.max(m, x.priority), 0);
+
+      const mod: LibraryMod = {
+        modName,
+        gameId,
+        name,
+        source: meta.source ?? 'local',
+        version: meta.version ?? '',
+        author: meta.author ?? '',
+        summary: meta.summary ?? '',
+        pictureUrl: meta.pictureUrl,
+        nexus: meta.nexus,
+        layout: detected.layout,
+        installable: detected.installable,
+        enabled: false,
+        priority: maxPriority + 1,
+        note: unwrapped ? `Unwrapped from a Windows patcher (PatchData.bin). ${detected.note}` : detected.note,
+      };
+      await this.writeMeta(mod);
+      return mod;
+    } finally {
+      if (unwrapped) await fs.rm(unwrapped, { recursive: true, force: true });
+    }
   }
 
   async list(gameId: GameId): Promise<LibraryMod[]> {
@@ -249,6 +328,28 @@ export class ModLibrary {
       providers.push({ modName: m.modName, files: detected.files, injections });
     }
     await this.deployment.reconcile(gameId, whitePath, providers);
+
+    // Register any ADDED files (e.g. restored DLC characters) into the live
+    // filelist so the engine can resolve them in unpacked mode. The index code
+    // is computed from each path, so this is generic — replacements are skipped
+    // (their entry already exists) and the edit is reversible.
+    const wanted = new Map<string, number>();
+    for (const p of providers) {
+      for (const rel of p.files.keys()) {
+        const dest = path.join(whitePath, ...rel.split('/'));
+        try {
+          wanted.set(rel, (await fs.stat(dest)).size);
+        } catch {
+          /* not deployed (skipped/conflict) — ignore */
+        }
+      }
+    }
+    await reconcileFilelist({
+      gameId,
+      whitePath,
+      backupDir: path.join(this.basePath, 'FilelistBackup', gameId),
+      wanted,
+    });
   }
 
   private async readMeta(gameId: GameId, modName: string): Promise<LibraryMod | null> {
