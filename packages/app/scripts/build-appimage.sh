@@ -7,7 +7,7 @@ echo "copying electron dist..."; cp -a "$ED/." "$AD/"
 mkdir -p "$AD/resources/app"
 cp -a "$ROOT/packages/app/out" "$AD/resources/app/out"
 cp -a "$ROOT/packages/app/resources" "$AD/resources/app/resources"
-printf '{"name":"open-nova","version":"0.1.0","main":"out/main/index.js"}\n' > "$AD/resources/app/package.json"
+printf '{"name":"open-nova","version":"0.1.0","type":"module","main":"out/main/index.js"}\n' > "$AD/resources/app/package.json"
 printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/electron" "$@"\n' > "$AD/AppRun"; chmod +x "$AD/AppRun"
 cat > "$AD/open-nova.desktop" <<DESK
 [Desktop Entry]
