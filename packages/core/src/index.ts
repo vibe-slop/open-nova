@@ -20,6 +20,7 @@ export * from './mods/ini.js';
 export * from './mods/ncmp.js';
 export * from './mods/manager.js';
 export * from './mods/deployment.js';
+export * from './mods/autodetect.js';
 // Inner container formats
 export * from './formats/wpd.js';
 export * from './formats/trb.js';
