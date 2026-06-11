@@ -616,12 +616,31 @@ async function findArchivePairs(root: string): Promise<{ filelist: string; img: 
     }
     for (const e of entries) {
       const full = join(d, e.name);
-      if (e.isDirectory()) await rec(full);
-      else if (/^filelist.*\.win32\.bin$/i.test(e.name)) {
-        const suffix = e.name.replace(/^filelist/i, '').replace(/\.win32\.bin$/i, '');
-        const imgName = `white${suffix.startsWith('_') ? suffix : '_img' + suffix}.win32.bin`;
-        const img = join(d, imgName);
-        if (await exists(img)) out.push({ filelist: full, img });
+      if (e.isDirectory()) {
+        await rec(full);
+        continue;
+      }
+      // Match filelist<MID>.win32.bin and the split-part filelist<MID>.win32.bin2.
+      const m = /^filelist(.*)\.win32\.bin(2?)$/i.exec(e.name);
+      if (!m) continue;
+      const mid = m[1]; // e.g. 'u', 'c', '_scru', '_z0049u'
+      const part = m[2]; // '' or '2' (split archives)
+      // The white_img name is irregular across archive families — try each
+      // convention and use whichever actually exists on disk:
+      //   sys main:   filelistu        -> white_imgu
+      //   script:     filelist_scru    -> white_scru
+      //   zone:       filelist_z0049u  -> white_z0049u_img   (and _img2 for .bin2)
+      const candidates = [
+        `white_img${mid}.win32.bin${part}`,
+        `white${mid}.win32.bin${part}`,
+        `white${mid}_img${part}.win32.bin`,
+      ];
+      for (const c of candidates) {
+        const img = join(d, c);
+        if (await exists(img)) {
+          out.push({ filelist: full, img });
+          break;
+        }
       }
     }
   }
