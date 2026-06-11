@@ -32,6 +32,9 @@ export * from './nexus/client.js';
 // Inner container formats
 export * from './formats/wpd.js';
 export * from './formats/trb.js';
+export { repackTrb } from './formats/trb-repack.js';
+export * from './formats/ztr.js';
+export * from './formats/ztr-dicts.js';
 // Texture pipeline (GTEX header + DDS + IMGB pixel blob)
 export * from './formats/gtex.js';
 export * from './formats/dds.js';

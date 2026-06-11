@@ -26,6 +26,7 @@ import {
   unpackTrb,
   unpackWpd,
   unpackImgb,
+  repackImgbInPlace,
 } from '@open-nova/core';
 
 const args = process.argv.slice(2);
@@ -128,6 +129,23 @@ switch (cmd) {
     break;
   }
 
+  case 'repack-texture': {
+    const [, container, imgbPath, entryName, ddsPath, outImgb] = pos;
+    if (!container || !imgbPath || !entryName || !ddsPath || !outImgb)
+      die('usage: open-nova repack-texture <container.trb|.wpd> <imgb> <entryName> <new.dds> <outImgb>\n  (in-place: the DDS must match the original texture dimensions/format)');
+    const cbuf = await fs.readFile(container);
+    let imgb = await fs.readFile(imgbPath);
+    const dds = await fs.readFile(ddsPath);
+    const isWpd = cbuf.subarray(0, 3).toString('latin1') === 'WPD';
+    const entries = (isWpd ? unpackWpd(cbuf) : unpackTrb(cbuf)).entries ?? [];
+    const target = entries.find((e) => String(e.name).replace(/[\\/]/g, '_') === entryName || String(e.name) === entryName);
+    if (!target || !target.data) die(`entry not found: ${entryName}`);
+    imgb = repackImgbInPlace(target.data, imgb, dds);
+    await fs.writeFile(outImgb, imgb);
+    console.log(`injected ${ddsPath} into ${entryName} -> ${outImgb} (${imgb.length} bytes)`);
+    break;
+  }
+
   case 'mods': {
     const [, sub, name] = pos;
     const game = gameFromFlag();
@@ -162,6 +180,7 @@ Commands:
   encrypt <filelist> [out]                 re-encrypt a filelist index
   unpack  <filelist> <white_img> <outDir>  extract an archive  (--game=1|2|3)
   textures <container> <pixels.imgb> <out>  extract textures (.trb/.wpd + .imgb) to DDS
+  repack-texture <container> <imgb> <entry> <dds> <outImgb>  inject an edited DDS (same size)
   mods list                                list imported mods   (--game=2)
   mods install <name>                      install a mod        (--game=2)
   mods uninstall <name>                    uninstall a mod      (--game=2)
