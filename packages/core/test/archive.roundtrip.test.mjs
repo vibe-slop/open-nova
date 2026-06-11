@@ -9,7 +9,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { packArchive, unpackArchive, repackArchive } from '../src/archive/whitebin.ts';
-import { decryptFilelist, isFilelistEncrypted } from '../src/crypto/filelist-crypto.ts';
+import { decryptFilelist, isFilelistEncrypted, deriveSeed } from '../src/crypto/filelist-crypto.ts';
 
 let pass = 0;
 let fail = 0;
@@ -44,6 +44,19 @@ function eqFiles(inputs, unpacked) {
 }
 
 console.log('Archive layer round-trip:');
+
+// Regression: filelist seed derivation must SIGN-EXTEND (the original casts a
+// signed int32 to ulong). When header[9]'s high bit is set, the upper 4 seed
+// bytes are 0xFF, not 0x00. Validated against a real FFXIII-2 filelist whose
+// header byte[9]=0xa1 yields seed f5ca56a1ffffffff.
+{
+  const hi = new Uint8Array(16);
+  hi[0] = 0xf5; hi[2] = 0xca; hi[12] = 0x56; hi[9] = 0xa1; // high bit set
+  check('seed sign-extends when header[9] high bit set', Buffer.from(deriveSeed(hi)).toString('hex') === 'f5ca56a1ffffffff');
+  const lo = new Uint8Array(16);
+  lo[0] = 0xf5; lo[2] = 0xca; lo[12] = 0x56; lo[9] = 0x21; // high bit clear
+  check('seed zero-extends when header[9] high bit clear', Buffer.from(deriveSeed(lo)).toString('hex') === 'f5ca562100000000');
+}
 
 for (const gameCode of [1, 2, 3]) {
   for (const chunkCount of [1, 3]) {

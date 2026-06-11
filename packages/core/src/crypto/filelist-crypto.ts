@@ -51,14 +51,19 @@ export function isFilelistEncrypted(buf: Uint8Array): boolean {
   return readU32LE(buf, TAG_OFFSET) === FILELIST_MAGIC;
 }
 
-/** Derive the 8-byte cipher seed from the 16-byte filelist header. */
-function deriveSeed(buf: Uint8Array): Uint8Array {
-  // value = (b[9]<<24) | (b[12]<<16) | (b[2]<<8) | b[0]  (a 32-bit quantity)
-  const value =
-    (((buf[9] << 24) | (buf[12] << 16) | (buf[2] << 8) | buf[0]) >>> 0) >>> 0;
-  // GenerateXORtable consumes 8 LE bytes (high 4 are zero), then reverses them.
+/**
+ * Derive the 8-byte cipher seed from the 16-byte filelist header. Exported for
+ * regression testing of the sign-extension behaviour (see below).
+ */
+export function deriveSeed(buf: Uint8Array): Uint8Array {
+  // value = (b[9]<<24) | (b[12]<<16) | (b[2]<<8) | b[0]. In the original this is
+  // a SIGNED 32-bit int cast to ulong, which sign-extends: if bit 31 is set the
+  // upper 4 seed bytes are 0xFF, not 0x00. GenerateXORtable consumes these 8 LE
+  // bytes (then reverses them internally).
+  const value = (buf[9] << 24) | (buf[12] << 16) | (buf[2] << 8) | buf[0]; // signed int32
   const seed = new Uint8Array(8);
-  writeU32LE(seed, 0, value);
+  writeU32LE(seed, 0, value >>> 0); // low 32 bits
+  writeU32LE(seed, 4, value < 0 ? 0xffffffff : 0); // sign extension to 64-bit
   return seed;
 }
 
