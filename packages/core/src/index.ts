@@ -26,6 +26,8 @@ export * from './mods/manager.js';
 export * from './mods/deployment.js';
 export * from './mods/autodetect.js';
 export * from './mods/library.js';
+export * from './mods/texture-inject.js';
+export * from './mods/fixes.js';
 // Nexus Mods integration
 export * from './nexus/types.js';
 export * from './nexus/nxm.js';

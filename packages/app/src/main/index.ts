@@ -307,7 +307,12 @@ function registerIpc(): void {
   });
 
   // --- Mod library (enable/disable) ---
-  ipcMain.handle(IPC.libraryList, async (_e, game: GameId) => (await library().list(game)).map(toLibraryMod));
+  ipcMain.handle(IPC.libraryList, async (_e, game: GameId) => {
+    // Ensure bundled fixes (e.g. the rain-translucency fix) appear as normal,
+    // re-orderable mods in the list.
+    await library().syncBuiltinFixes(game).catch(() => {});
+    return (await library().list(game)).map(toLibraryMod);
+  });
   ipcMain.handle(IPC.librarySetEnabled, async (_e, game: GameId, modName: string, enabled: boolean) => {
     const whitePath = await whiteRootFor(game);
     if (!whitePath) return { ok: false, message: 'Game not found / not unpacked.', mods: (await library().list(game)).map(toLibraryMod) };
@@ -667,6 +672,11 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     await loadConfig();
+    // Point @open-nova/core at the packaged bundled-fixes dir (the bundled main
+    // process can't resolve the core source path).
+    for (const c of resourceCandidates('fixes')) {
+      if (await exists(c)) { process.env.OPEN_NOVA_FIXES_DIR = c; break; }
+    }
     registerIpc();
     createWindow();
     routeNxm(extractNxmUrl(process.argv)); // cold-start with an nxm:// arg

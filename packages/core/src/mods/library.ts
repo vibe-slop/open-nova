@@ -14,12 +14,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Deployment, type GameId, type ModProvider } from './deployment.js';
 import { detectMod, type ModLayout } from './autodetect.js';
+import { listContainerInjections } from './texture-inject.js';
+import { listBuiltinFixes } from './fixes.js';
 import { extractArchive } from '../archive/extract.js';
 
 const META = 'nova-mod.json';
 const CONTENT = 'content';
 
-export type ModSource = 'nexus' | 'local' | 'ncmp';
+export type ModSource = 'nexus' | 'local' | 'ncmp' | 'builtin';
 
 export interface NexusRef {
   domain: string;
@@ -203,13 +205,48 @@ export class ModLibrary {
     await fs.rm(this.modDir(gameId, modName), { recursive: true, force: true });
   }
 
+  /**
+   * Ensure the bundled built-in fixes (e.g. the rain-translucency fix) appear in
+   * the library as normal mods — disabled by default, re-orderable like any
+   * other. Idempotent: skips fixes already present.
+   */
+  async syncBuiltinFixes(gameId: GameId): Promise<void> {
+    const existing = await this.list(gameId);
+    let priority = existing.reduce((m, x) => Math.max(m, x.priority), 0);
+    for (const fix of await listBuiltinFixes()) {
+      if (fix.game !== gameId) continue;
+      const modName = safeName(fix.name);
+      if (existing.some((m) => m.modName === modName)) continue;
+      const dir = this.modDir(gameId, modName);
+      await fs.mkdir(path.join(dir, CONTENT), { recursive: true });
+      await fs.cp(path.join(fix.dir, fix.payload), path.join(dir, CONTENT), { recursive: true });
+      const detected = await detectMod(path.join(dir, CONTENT));
+      await this.writeMeta({
+        modName,
+        gameId,
+        name: fix.name,
+        source: 'builtin',
+        version: '1.3',
+        author: 'Krisan Thyme',
+        summary: fix.summary,
+        layout: detected.layout,
+        installable: detected.installable,
+        enabled: false,
+        priority: ++priority,
+        note: fix.credit,
+      });
+    }
+  }
+
   /** Re-deploy the game tree to match the currently-enabled mods. */
   async reconcile(gameId: GameId, whitePath: string): Promise<void> {
     const enabled = (await this.list(gameId)).filter((m) => m.enabled).sort((a, b) => a.priority - b.priority);
     const providers: ModProvider[] = [];
     for (const m of enabled) {
-      const detected = await detectMod(path.join(this.modDir(gameId, m.modName), CONTENT));
-      providers.push({ modName: m.modName, files: detected.files });
+      const content = path.join(this.modDir(gameId, m.modName), CONTENT);
+      const detected = await detectMod(content);
+      const injections = await listContainerInjections(content);
+      providers.push({ modName: m.modName, files: detected.files, injections });
     }
     await this.deployment.reconcile(gameId, whitePath, providers);
   }

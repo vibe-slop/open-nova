@@ -1,0 +1,10 @@
+{
+  "id": "rain-leviathans-tears",
+  "name": "Rain Translucency Fix (Leviathan's Tears)",
+  "game": "XIII-2",
+  "summary": "Fixes the broken, opaque rain in the FFXIII-2 PC port (weather07 & weather08).",
+  "kind": "texture-inject",
+  "payload": "payload",
+  "credit": "Leviathan's Tears v1.3 by Krisan Thyme. Texture redistributed in open-nova with the author's permission; it is a new texture, not a Square Enix asset.",
+  "source": "https://www.nexusmods.com/finalfantasyxiii2"
+}

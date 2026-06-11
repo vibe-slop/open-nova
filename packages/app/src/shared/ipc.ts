@@ -71,12 +71,12 @@ export interface LibraryMod {
   modName: string;
   name: string;
   game: GameId;
-  source: 'nexus' | 'local' | 'ncmp';
+  source: 'nexus' | 'local' | 'ncmp' | 'builtin';
   version: string;
   author: string;
   summary: string;
   pictureUrl?: string;
-  layout: 'ncmp' | 'dataRoot' | 'bare' | 'installer' | 'unknown';
+  layout: 'ncmp' | 'dataRoot' | 'bare' | 'installer' | 'texture-inject' | 'unknown';
   installable: boolean;
   enabled: boolean;
   priority: number;

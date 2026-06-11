@@ -19,14 +19,17 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { injectIntoImgb, findHeaderPath, type ContainerInjection } from './texture-inject.js';
 
 export type GameId = 'XIII' | 'XIII-2' | 'XIII-LR';
 
 /** What a single enabled mod contributes, in priority order (low -> high). */
 export interface ModProvider {
   modName: string;
-  /** relative path under the game data root -> absolute source file path. */
+  /** relative path under the game data root -> absolute source file path (loose overlay). */
   files: Map<string, string>;
+  /** in-container texture injections this mod applies. */
+  injections?: ContainerInjection[];
 }
 
 interface Ledger {
@@ -90,55 +93,71 @@ export class Deployment {
   async reconcile(gameId: GameId, whitePath: string, providers: ModProvider[]): Promise<ReconcileResult> {
     const ledger = await this.loadLedger(gameId);
     const backupDir = this.backupDir(gameId);
-    // Paths we deployed last time: their current on-disk content is a MOD file,
-    // not vanilla, so we must never capture them as a "vanilla" backup.
-    const previouslyOwned = new Set(Object.keys(ledger.files));
+    // Paths touched last time: their current on-disk content is a MOD result,
+    // not vanilla, so we must never capture them fresh as a "vanilla" backup.
+    const previouslyTouched = new Set(Object.keys(ledger.files));
 
-    // 1) Desired ownership: last provider wins; track conflicts for reporting.
-    const desired = new Map<string, { modName: string; source: string }>();
-    const contenders = new Map<string, string[]>();
+    // 1) Build the ordered op list per target path. Providers are already in
+    //    priority order (low -> high), so a later op overrides/builds on earlier.
+    type Op = { modName: string } & ({ kind: 'overlay'; source: string } | { kind: 'inject'; entryName: string; ddsPath: string });
+    const opsByPath = new Map<string, Op[]>();
+    const push = (rel: string, op: Op) => {
+      const norm = rel.split(path.sep).join('/');
+      (opsByPath.get(norm) ?? opsByPath.set(norm, []).get(norm)!).push(op);
+    };
     for (const prov of providers) {
-      for (const [rel, source] of prov.files) {
-        const norm = rel.split(path.sep).join('/');
-        desired.set(norm, { modName: prov.modName, source });
-        (contenders.get(norm) ?? contenders.set(norm, []).get(norm)!).push(prov.modName);
-      }
+      for (const [rel, source] of prov.files) push(rel, { modName: prov.modName, kind: 'overlay', source });
+      for (const inj of prov.injections ?? []) push(inj.containerRel, { modName: prov.modName, kind: 'inject', entryName: inj.entryName, ddsPath: inj.ddsPath });
     }
-    const conflicts = [...contenders.entries()]
-      .filter(([, mods]) => mods.length > 1)
-      .map(([p, mods]) => ({ path: p, winner: mods[mods.length - 1], losers: mods.slice(0, -1) }));
+    const conflicts = [...opsByPath.entries()]
+      .filter(([, ops]) => new Set(ops.map((o) => o.modName)).size > 1)
+      .map(([p, ops]) => ({ path: p, winner: ops[ops.length - 1].modName, losers: ops.slice(0, -1).map((o) => o.modName) }));
 
     let deployed = 0;
     let restored = 0;
 
-    // 2) Deploy desired files (capturing vanilla backup once per path).
-    for (const [rel, { source }] of desired) {
-      const gameFile = path.join(whitePath, ...rel.split('/'));
-      const backupFile = path.join(backupDir, ...rel.split('/'));
-      if (!previouslyOwned.has(rel) && !(await exists(backupFile)) && (await exists(gameFile))) {
-        await copyFile(gameFile, backupFile); // capture vanilla once, on genuine first overlay
-      }
-      await copyFile(source, gameFile);
-      deployed++;
-    }
-
-    // 3) Restore paths that were deployed before but are no longer desired.
-    for (const rel of Object.keys(ledger.files)) {
-      if (desired.has(rel)) continue;
+    // 2) Restore paths touched before but not any more (vanilla, then drop).
+    for (const rel of previouslyTouched) {
+      if (opsByPath.has(rel)) continue;
       const gameFile = path.join(whitePath, ...rel.split('/'));
       const backupFile = path.join(backupDir, ...rel.split('/'));
       if (await exists(backupFile)) {
-        await copyFile(backupFile, gameFile); // restore vanilla
+        await copyFile(backupFile, gameFile);
         await fs.rm(backupFile, { force: true });
       } else if (await exists(gameFile)) {
-        await fs.rm(gameFile, { force: true }); // mod-added file: remove
+        await fs.rm(gameFile, { force: true });
       }
       restored++;
     }
 
-    // 4) Persist new ownership map.
+    // 3) For each touched path: capture vanilla once, reset to vanilla, then
+    //    apply its ops in priority order (overlay replaces; inject modifies).
+    for (const [rel, ops] of opsByPath) {
+      const gameFile = path.join(whitePath, ...rel.split('/'));
+      const backupFile = path.join(backupDir, ...rel.split('/'));
+      const hadVanilla = await exists(backupFile);
+      if (!previouslyTouched.has(rel) && !hadVanilla && (await exists(gameFile))) {
+        await copyFile(gameFile, backupFile); // capture true vanilla once
+      }
+      // Reset to the vanilla baseline before re-applying (idempotent + correct on reorder).
+      if (await exists(backupFile)) await copyFile(backupFile, gameFile);
+      for (const op of ops) {
+        if (op.kind === 'overlay') {
+          await copyFile(op.source, gameFile);
+        } else {
+          const header = await findHeaderPath(gameFile);
+          if (!header) continue; // container has no paired header (or not unpacked): skip
+          const imgb = await fs.readFile(gameFile);
+          const dds = await fs.readFile(op.ddsPath);
+          await fs.writeFile(gameFile, injectIntoImgb(await fs.readFile(header.path), header.ext, imgb, op.entryName, dds));
+        }
+      }
+      deployed++;
+    }
+
+    // 4) Persist the touched set (value = last contributor, for next-run vanilla logic).
     const newFiles: Record<string, string> = {};
-    for (const [rel, { modName }] of desired) newFiles[rel] = modName;
+    for (const [rel, ops] of opsByPath) newFiles[rel] = ops[ops.length - 1].modName;
     await this.saveLedger(gameId, { version: 1, files: newFiles });
 
     return { deployed, restored, conflicts };

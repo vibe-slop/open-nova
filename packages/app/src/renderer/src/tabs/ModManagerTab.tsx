@@ -100,7 +100,7 @@ export function ModManagerTab({ game }: { game: GameId }) {
                 <div className="truncate text-xs text-nova-muted">
                   {m.author && `${m.author} · `}
                   {m.version && `v${m.version} · `}
-                  {m.source === 'nexus' ? 'Nexus' : m.source === 'ncmp' ? 'ModPack' : 'local'}
+                  {m.source === 'nexus' ? 'Nexus' : m.source === 'ncmp' ? 'ModPack' : m.source === 'builtin' ? 'built-in' : 'local'}
                   {!m.installable && m.note ? ` · ${m.note}` : ''}
                 </div>
               </div>

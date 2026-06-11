@@ -22,11 +22,12 @@ export const DATA_ROOTS = ['alba_data', 'white_data', 'weiss_data'];
 export const DATA_ROOT_CHILDREN = new Set([
   'sys', 'zone', 'movie', 'udp', 'chr', 'txt', 'gui', 'map', 'sound', 'db',
   'event', 'battle', 'menu', 'image', 'fa', 'npc', 'pc', 'mon', 'weapon',
+  'vfx', 'mot', 'sptl', 'wpl', 'btscene',
 ]);
 
 const NOVA_OVERLAY_DIRS = ['Data', 'EN-Data', 'JP-Data'];
 
-export type ModLayout = 'ncmp' | 'dataRoot' | 'bare' | 'installer' | 'unknown';
+export type ModLayout = 'ncmp' | 'dataRoot' | 'bare' | 'installer' | 'texture-inject' | 'unknown';
 
 export interface DetectedMod {
   layout: ModLayout;
@@ -58,12 +59,42 @@ async function listDir(p: string): Promise<{ dirs: string[]; files: string[] }> 
   return { dirs, files };
 }
 
-async function walkInto(root: string, dir: string, out: Map<string, string>): Promise<void> {
+async function walkInto(root: string, dir: string, out: Map<string, string>, skipInjectionDirs = false): Promise<void> {
   for (const e of await fs.readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) await walkInto(root, full, out);
-    else if (e.isFile()) out.set(path.relative(root, full).split(path.sep).join('/'), full);
+    if (e.isDirectory()) {
+      if (skipInjectionDirs && e.name.startsWith('_')) continue; // injection payload, not a loose overlay
+      await walkInto(root, full, out, skipInjectionDirs);
+    } else if (e.isFile()) out.set(path.relative(root, full).split(path.sep).join('/'), full);
   }
+}
+
+/** True if the tree contains any `_<container>/…*.dds` injection payload. */
+async function hasContainerInjections(root: string): Promise<boolean> {
+  let found = false;
+  async function rec(dir: string): Promise<void> {
+    if (found) return;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (found) return;
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith('_')) {
+        // look for a .dds anywhere under this _<container> folder
+        const inner = path.join(dir, e.name);
+        for (const f of await fs.readdir(inner, { withFileTypes: true })) {
+          if (f.isFile() && f.name.toLowerCase().endsWith('.dds')) { found = true; return; }
+        }
+      }
+      await rec(path.join(dir, e.name));
+    }
+  }
+  await rec(root);
+  return found;
 }
 
 /** Any Windows executable/script at the top level marks an installer-style mod. */
@@ -98,6 +129,23 @@ export async function detectMod(extractedDir: string): Promise<DetectedMod> {
   const { dirs, files } = await listDir(root);
   const lowerFiles = files.map((f) => f.toLowerCase());
   const dirSet = new Set(dirs);
+
+  // 0) In-container texture mod: anywhere in the tree there is an `_<container>`
+  //    folder holding `.dds` files to inject (the Nova / WhiteBinTools convention,
+  //    e.g. .../weather07/_veffs.jp.win32.imgb/x.vtex.dds). The injections are
+  //    applied by the deployment engine via listContainerInjections(); any loose
+  //    files outside `_<container>` dirs are still collected as overlays.
+  if (await hasContainerInjections(root)) {
+    const map = new Map<string, string>();
+    await walkInto(root, root, map, true); // skip _<container> subtrees
+    return {
+      layout: 'texture-inject',
+      files: map,
+      contentRoot: root,
+      note: 'In-container texture mod (injects DDS into game containers).',
+      installable: true,
+    };
+  }
 
   // 1) Nova .ncmp style: modconfig.ini + overlay dirs.
   if (lowerFiles.includes('modconfig.ini') || NOVA_OVERLAY_DIRS.some((d) => dirSet.has(d))) {

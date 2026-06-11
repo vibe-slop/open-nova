@@ -88,43 +88,36 @@ try {
   check('ncmp: routed through zip extractor', ncmpReadme.toString('utf8') === 'hello world');
 
   // -------------------------------------------------------------------------
-  // (c) .7z / .rar without optional deps installed -> clear, named error
+  // (c) .7z / .rar dispatch. When the optional dep is ABSENT, the error must
+  //     name the package + install command. When it's INSTALLED (e.g. CI after
+  //     `npm install`), a fake archive must still route to the extractor and
+  //     throw *some* error (invalid archive) — proving the dispatch path works.
   // -------------------------------------------------------------------------
-  const sevenZipPath = path.join(tmpRoot, 'x.7z');
-  await fs.writeFile(sevenZipPath, Buffer.from('not a real 7z'));
-  let sevenErr;
-  try {
-    await extractArchive(sevenZipPath, path.join(tmpRoot, 'sz'));
-  } catch (e) {
-    sevenErr = e;
+  const has = async (pkg) => {
+    try { await import(pkg); return true; } catch { return false; }
+  };
+  const cases = [
+    { ext: '7z', pkg: '7z-wasm', dir: 'sz' },
+    { ext: 'rar', pkg: 'node-unrar-js', dir: 'rr' },
+  ];
+  for (const c of cases) {
+    const p = path.join(tmpRoot, `x.${c.ext}`);
+    await fs.writeFile(p, Buffer.from(`not a real ${c.ext}`));
+    let err;
+    try {
+      await extractArchive(p, path.join(tmpRoot, c.dir));
+    } catch (e) {
+      err = e;
+    }
+    const missingDepError = !!err && new RegExp(`npm i ${c.pkg}`).test(err.message);
+    if (await has(c.pkg)) {
+      // dep installed: must route to the real extractor (not the missing-dep error)
+      check(`${c.ext}: routed to extractor (dep '${c.pkg}' present)`, !missingDepError);
+    } else {
+      // dep absent: must throw the clear, named install error
+      check(`${c.ext}: error names '${c.pkg}' + install cmd`, missingDepError);
+    }
   }
-  check('7z: throws when dep missing', sevenErr instanceof Error);
-  check(
-    "7z: error names the '7z-wasm' package",
-    !!sevenErr && /7z-wasm/.test(sevenErr.message),
-  );
-  check(
-    '7z: error includes install command',
-    !!sevenErr && /npm i 7z-wasm/.test(sevenErr.message),
-  );
-
-  const rarPath = path.join(tmpRoot, 'x.rar');
-  await fs.writeFile(rarPath, Buffer.from('not a real rar'));
-  let rarErr;
-  try {
-    await extractArchive(rarPath, path.join(tmpRoot, 'rr'));
-  } catch (e) {
-    rarErr = e;
-  }
-  check('rar: throws when dep missing', rarErr instanceof Error);
-  check(
-    "rar: error names the 'node-unrar-js' package",
-    !!rarErr && /node-unrar-js/.test(rarErr.message),
-  );
-  check(
-    'rar: error includes install command',
-    !!rarErr && /npm i node-unrar-js/.test(rarErr.message),
-  );
 
   // -------------------------------------------------------------------------
   // (d) unknown extension throws
