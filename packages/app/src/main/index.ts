@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } from 'electron';
 import { join, resolve as resolvePath } from 'node:path';
-import { promises as fs } from 'node:fs';
+import { promises as fs, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import {
   GAMES,
@@ -710,6 +710,7 @@ function routeNxm(url: string | undefined): void {
 const extractNxmUrl = (argv: string[]): string | undefined => argv.find((a) => a.startsWith('nxm://'));
 
 function createWindow(): void {
+  const iconPath = resourceCandidates('icon.png').find((p) => existsSync(p));
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 760,
@@ -717,6 +718,7 @@ function createWindow(): void {
     minHeight: 640,
     backgroundColor: '#0b0d17',
     autoHideMenuBar: true,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,

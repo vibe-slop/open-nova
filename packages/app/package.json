@@ -42,10 +42,11 @@
     "linux": {
       "target": ["AppImage", "flatpak"],
       "category": "Game",
+      "icon": "build/icon.png",
       "synopsis": "Mod manager for the FINAL FANTASY XIII trilogy",
       "desktop": { "entry": { "MimeType": "x-scheme-handler/nxm;" } }
     },
-    "mac": { "target": "dmg", "category": "public.app-category.utilities" },
-    "win": { "target": "nsis" }
+    "mac": { "target": "dmg", "category": "public.app-category.utilities", "icon": "build/icon.png" },
+    "win": { "target": "nsis", "icon": "build/icon.png" }
   }
 }
