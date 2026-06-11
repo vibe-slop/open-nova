@@ -501,8 +501,42 @@ async function unpackGame(game: GameId): Promise<{ ok: boolean; message: string 
     }
     send(IPC.evProgress, { jobId: 'unpackGame', kind: 'unpack', current: ++done, total: pairs.length, message: filelist });
   }
+  await firstTimeSetup(root);
   await fs.writeFile(join(root, UNPACKED_MARKER), new Date().toISOString());
   return { ok: true, message: `Unpacked ${pairs.length} archive(s).` };
+}
+
+/** Candidate paths to a bundled resource (dev vs packaged). */
+function resourceCandidates(name: string): string[] {
+  return [
+    join(process.resourcesPath ?? '', name), // electron-builder extraResources
+    join(app.getAppPath(), 'resources', name), // dev (app package root)
+    join(__dirname, '..', '..', 'resources', name), // dev (out/main → app root)
+  ];
+}
+
+/**
+ * Per-game first-time-setup the engine expects in unpacked mode: write the
+ * debug font texture as a loose file (Nova does this; without it the engine can
+ * fail to boot unpacked). Extracted verbatim from the original's resources.
+ */
+async function firstTimeSetup(whiteRoot: string): Promise<void> {
+  try {
+    let src: string | null = null;
+    for (const c of resourceCandidates('DebugFontTextureDDS.bin')) {
+      if (await exists(c)) { src = c; break; }
+    }
+    if (src) {
+      const dest = join(whiteRoot, 'sys', 'debug', 'DebugFontTextureDDS.bin');
+      await fs.mkdir(join(dest, '..'), { recursive: true });
+      await fs.copyFile(src, dest);
+      log('info', 'Wrote sys/debug/DebugFontTextureDDS.bin (unpacked-mode boot resource).');
+    } else {
+      log('warn', 'DebugFontTextureDDS.bin resource missing; unpacked boot may need it.');
+    }
+  } catch (err) {
+    log('warn', `first-time setup: ${(err as Error).message}`);
+  }
 }
 
 async function findArchivePairs(root: string): Promise<{ filelist: string; img: string }[]> {
