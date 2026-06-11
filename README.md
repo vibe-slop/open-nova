@@ -35,6 +35,13 @@ Windows PC. open-nova aims to be a native option.
     (Large-Address-Aware on disk),
   - **WPD/TRB** container read/write.
   - 116 tests pass: `npm test` (from the repo root).
+- **Nexus Mods integration** — connect with a personal API key (stored
+  encrypted), then **"Download with Manager"** on any mod page hands the mod to
+  open-nova via the `nxm://` handler; it downloads, auto-detects the layout
+  (zip/7z/rar/.ncmp), and stages it. You then just flip **enable/disable** — the
+  deployment ledger applies/reverts files with priority-based conflict
+  resolution and vanilla backups, so nothing is manual and everything is
+  reversible. Premium accounts can also install in-app by mod id.
 - **`@open-nova/cli`** — `open-nova detect | decrypt | encrypt | unpack | mods`.
 - **`@open-nova/app`** — Electron + React + Tailwind UI (5 tabs); builds and
   type-checks.

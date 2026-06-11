@@ -81,6 +81,36 @@ mods/
    About); package as AppImage + Flatpak.
 8. **ZTR / SCD** — text & audio tooling (optional).
 
+## Nexus Mods integration (built)
+
+The "download → enable/disable, automatic" flow:
+
+1. **Auth** — the user pastes a personal API key (from nexusmods.com → My
+   account → API). It's stored encrypted via Electron `safeStorage` in the main
+   process and never reaches the renderer. `GET /users/validate.json` returns
+   `is_premium`, which picks the download path.
+2. **Download** — two paths:
+   - **`nxm://` handler (everyone, incl. free accounts)**: open-nova registers
+     as the `nxm://` protocol client (`setAsDefaultProtocolClient` + single-
+     instance lock + `second-instance`/`open-url` routing). Clicking "Download
+     with Manager" on a mod page sends `nxm://{domain}/mods/{id}/files/{fid}?key=&expires=`;
+     the app redeems it via `download_link.json` and streams the file.
+   - **In-app (Premium)**: `download_link.json` with no grant returns a CDN URL
+     directly; a 403 tells free users to use the Mod Manager button instead.
+3. **Auto-detect + stage** — the archive is extracted (zip natively; 7z/rar via
+   optional WASM deps), `detectMod` infers the layout (Nova `.ncmp` / data-root /
+   bare tree / Windows installer), and it's registered in the `ModLibrary`
+   (disabled by default).
+4. **Enable/disable** — toggling reconciles the game tree through the
+   `Deployment` ledger: highest-priority enabled mod wins each file, vanilla
+   originals are backed up once and restored when no mod claims them.
+
+**Packaging note (Steam Deck):** `setAsDefaultProtocolClient` alone doesn't
+register the scheme on Linux — the packager must ship a `.desktop` with
+`MimeType=x-scheme-handler/nxm;` and `Exec=… %U`. Set electron-builder
+`build.protocols = { name: 'Nexus Mods Handler', schemes: ['nxm'] }` +
+`linux.desktopName` when we add packaging.
+
 ## Validation philosophy
 
 Every format module ships with vectors captured from the **original DLL** (via
