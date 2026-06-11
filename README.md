@@ -33,8 +33,10 @@ Windows PC. open-nova aims to be a native option.
     pack generation),
   - **Steam discovery** (cross-platform, no registry) + **PE patching**
     (Large-Address-Aware on disk),
-  - **WPD/TRB** container read/write.
-  - 116 tests pass: `npm test` (from the repo root).
+  - **WPD/TRB** container read/write, and a **texture pipeline** (GTEX → DDS
+    extract + in-place IMGB repack — validated on real `c001` data: 28 textures
+    out, repack byte-identical).
+  - 240 assertions pass: `npm test` (from the repo root).
 - **Nexus Mods integration** — connect with a personal API key (stored
   encrypted), then **"Download with Manager"** on any mod page hands the mod to
   open-nova via the `nxm://` handler; it downloads, auto-detects the layout
@@ -61,7 +63,11 @@ decompress to byte-exact sizes and carry valid container magic (e.g. `WPD\0`).
 This surfaced and fixed a seed sign-extension bug that synthetic tests missed.
 
 ### Not yet validated / not yet built
-- In-container texture mods (WPD/IMGB repack) and ZTR/SCD tooling.
+- **End-to-end texture-mod install**: the extract/repack *tools* are built and
+  validated, but wiring "a mod ships new textures → inject into the right
+  containers automatically" (the HD-pack case) is the next step. Mods that ship
+  whole replacement containers already work via the overlay.
+- ZTR/SCD (text/audio) tooling.
 - The bulk game unpacker (writing the full unpacked tree) and `steam://` launch
   path need a full on-device run.
 - Live Nexus download + the `nxm://` handler want an end-to-end run on the Deck.
