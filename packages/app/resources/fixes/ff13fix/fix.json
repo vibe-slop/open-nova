@@ -1,0 +1,11 @@
+{
+  "id": "ff13fix",
+  "name": "FF13Fix + DXVK filtering (Steam Deck)",
+  "game": "XIII-2",
+  "summary": "Essential PC-port fix: removes the frame pacer/stutter, fixes vibration, and (via dxvk.conf) forces 16x anisotropic texture filtering on the Deck. Recommended for everyone.",
+  "kind": "overlay",
+  "payload": "payload",
+  "defaultEnabled": true,
+  "credit": "FF13Fix by rebtd7 (a fork of OneTweakNG by Nucleoprotein), GPL-3.0 — see LICENSES/. dxvk.conf forces 16x anisotropic filtering. d3d9.dll/FF13Fix.ini bundled under the GPL.",
+  "source": "https://github.com/rebtd7/FF13Fix"
+}

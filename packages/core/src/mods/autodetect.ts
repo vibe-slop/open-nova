@@ -22,7 +22,7 @@ export const DATA_ROOTS = ['alba_data', 'white_data', 'weiss_data'];
 export const DATA_ROOT_CHILDREN = new Set([
   'sys', 'zone', 'movie', 'udp', 'chr', 'txt', 'gui', 'map', 'sound', 'db',
   'event', 'battle', 'menu', 'image', 'fa', 'npc', 'pc', 'mon', 'weapon',
-  'vfx', 'mot', 'sptl', 'wpl', 'btscene',
+  'vfx', 'mot', 'sptl', 'wpl', 'btscene', 'prog',
 ]);
 
 const NOVA_OVERLAY_DIRS = ['Data', 'EN-Data', 'JP-Data'];

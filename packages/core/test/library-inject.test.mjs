@@ -74,10 +74,19 @@ await lib.setEnabled('XIII-2', A.modName, false, white);
 await lib.setEnabled('XIII-2', B.modName, false, white);
 check('disable all: container restored to vanilla', Buffer.compare(await fs.readFile(path.join(cdir, 'cont.imgb')), vanillaImgb) === 0);
 
-// Bundled rain fix registers as a re-orderable library mod (disabled).
+// Bundled fixes register as re-orderable library mods.
 await lib.syncBuiltinFixes('XIII-2');
-const rain = (await lib.list('XIII-2')).find((m) => /Rain/.test(m.name));
-check('bundled rain fix registered as a library mod', !!rain && rain.source === 'builtin' && rain.layout === 'texture-inject' && rain.enabled === false);
+const builtins = await lib.list('XIII-2');
+const rain = builtins.find((m) => /Rain/.test(m.name));
+check('bundled rain fix registered (texture-inject, disabled)', !!rain && rain.source === 'builtin' && rain.layout === 'texture-inject' && rain.enabled === false);
+const ff13 = builtins.find((m) => /FF13Fix/.test(m.name));
+check('bundled FF13Fix registered (overlay, default-enabled)', !!ff13 && ff13.source === 'builtin' && ff13.layout === 'bare' && ff13.enabled === true);
+
+// FF13Fix is a loose-file overlay into prog/win/bin — works without unpacking.
+await lib.reconcile('XIII-2', white);
+const placed = await fs.readFile(path.join(white, 'prog/win/bin/d3d9.dll')).then(() => true).catch(() => false);
+check('FF13Fix overlays d3d9.dll into prog/win/bin on reconcile', placed);
+check('FF13Fix dxvk.conf placed', await fs.readFile(path.join(white, 'prog/win/bin/dxvk.conf'), 'utf8').then((s) => /samplerAnisotropy/.test(s)).catch(() => false));
 
 await fs.rm(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

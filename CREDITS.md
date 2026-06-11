@@ -22,3 +22,11 @@ Chrysalia tool's code, and no Square Enix game assets.
   decompiled binary was the reference for the clean-room reimplementation.
 
 You must own the games. open-nova is GPL-3.0-or-later.
+
+- **FF13Fix + DXVK filtering** — the files in
+  `packages/core/assets/fixes/ff13fix/` are **FF13Fix by rebtd7** (a fork of
+  **OneTweakNG by Nucleoprotein**), licensed **GPL-3.0** (see
+  `assets/fixes/ff13fix/LICENSES/`), bundled here under the GPL with thanks. The
+  `dxvk.conf` forces 16x anisotropic texture filtering on the Steam Deck. d3d9.dll
+  also contains MinHook (BSD) — see `MinHook_LICENSE.txt`. This fix is enabled by
+  default; disable it in the Mod Manager if you don't want it.

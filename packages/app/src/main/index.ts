@@ -574,6 +574,15 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
   const g = getGameById(game);
   if (!install || !g) return { ok: false, message: 'Game not found.' };
 
+  // Apply enabled mods (incl. default-on fixes like FF13Fix) right before launch.
+  try {
+    await library().syncBuiltinFixes(game);
+    await library().reconcile(game, join(install, g.dataRoot));
+    log('info', 'Applied enabled mods + fixes.');
+  } catch (err) {
+    log('warn', `mod reconcile before launch: ${(err as Error).message}`);
+  }
+
   // Patch the on-disk exe before launch. In unpacked mode this includes the
   // critical unpacked-mode branch override (so the game reads loose modded
   // files), plus text-language; otherwise just Large-Address-Aware. Always

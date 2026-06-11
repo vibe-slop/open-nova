@@ -15,10 +15,13 @@ export interface BuiltinFix {
   name: string;
   game: string;
   summary: string;
-  kind: 'texture-inject';
+  /** 'overlay' = drop loose files into the game tree; 'texture-inject' = inject DDS into containers. */
+  kind: 'texture-inject' | 'overlay';
   payload: string;
   credit: string;
   source?: string;
+  /** Apply by default out of the box (e.g. FF13Fix). */
+  defaultEnabled?: boolean;
   /** absolute path to the fix directory */
   dir: string;
 }

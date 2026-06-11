@@ -231,7 +231,7 @@ export class ModLibrary {
         summary: fix.summary,
         layout: detected.layout,
         installable: detected.installable,
-        enabled: false,
+        enabled: fix.defaultEnabled ?? false,
         priority: ++priority,
         note: fix.credit,
       });
