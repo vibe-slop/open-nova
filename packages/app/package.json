@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "open-nova desktop app (Electron + Vite + React + Tailwind)",
   "type": "module",
+  "author": "open-nova contributors",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -31,6 +32,7 @@
   "build": {
     "appId": "dev.opennova.app",
     "productName": "open-nova",
+    "electronVersion": "33.4.11",
     "directories": { "output": "release", "buildResources": "build" },
     "files": ["out/**/*", "package.json"],
     "extraResources": [{ "from": "resources", "to": "." }],
