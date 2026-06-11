@@ -57,6 +57,21 @@ await lib.setEnabled('XIII-2', A.modName, false, white);
 check('disable A restores vanilla', (await r(path.join(white, 'sys/shared.bin'))) === 'VANILLA');
 check('disable A removes extra file', (await r(path.join(white, 'sys/extraA.bin'))) === null);
 
+// Load order: with both enabled, reordering flips which mod wins a conflict.
+await lib.setEnabled('XIII-2', A.modName, true, white);
+await lib.setEnabled('XIII-2', B.modName, true, white);
+let ordered = (await lib.list('XIII-2')).map((m) => m.modName); // priority asc
+await lib.setOrder('XIII-2', ordered, white);
+const lastWins = ordered[ordered.length - 1];
+const expected = lastWins === A.modName ? 'FROM-A' : 'FROM-B';
+check('lowest-in-list... last applied wins conflict', (await r(path.join(white, 'sys/shared.bin'))) === expected);
+// Reverse the order -> the other mod now wins.
+await lib.setOrder('XIII-2', [...ordered].reverse(), white);
+const newLast = [...ordered].reverse()[ordered.length - 1];
+check('reorder flips the conflict winner', (await r(path.join(white, 'sys/shared.bin'))) === (newLast === A.modName ? 'FROM-A' : 'FROM-B'));
+await lib.setEnabled('XIII-2', A.modName, false, white);
+await lib.setEnabled('XIII-2', B.modName, false, white);
+
 // list reflects state.
 const list = await lib.list('XIII-2');
 check('list returns both mods', list.length === 2 && list.every((m) => !m.enabled));

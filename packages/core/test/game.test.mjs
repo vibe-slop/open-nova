@@ -217,5 +217,32 @@ check('vdf handles escaped backslashes', winPaths.length === 1 && winPaths[0] ==
 check('vdf empty string -> []', parseLibraryFoldersVdf('').length === 0);
 check('vdf garbage -> []', parseLibraryFoldersVdf('not a vdf at all').length === 0);
 
+// findGameInstall must prefer the library that actually contains the game's
+// data root (Steam can leave a stub install folder in the internal library
+// while the real files live on an SD card — the Steam Deck case).
+{
+  const { promises: fs } = await import('node:fs');
+  const os = (await import('node:os')).default;
+  const path = (await import('node:path')).default;
+  const { findGameInstall } = await import('../src/game/steam.ts');
+  const { getGameById } = await import('../src/game/gameinfo.ts');
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'nova-steam-'));
+  const internal = path.join(tmp, 'steam');
+  const sd = path.join(tmp, 'sdcard');
+  const g = getGameById('XIII-2');
+  // internal = stub (folder exists, no alba_data); sd = real (has alba_data).
+  await fs.mkdir(path.join(internal, 'steamapps', 'common', g.folder), { recursive: true });
+  await fs.mkdir(path.join(sd, 'steamapps', 'common', g.folder, g.dataRoot), { recursive: true });
+  await fs.mkdir(path.join(internal, 'steamapps'), { recursive: true });
+  await fs.writeFile(
+    path.join(internal, 'steamapps', 'libraryfolders.vdf'),
+    `"libraryfolders"\n{\n  "0"\n  {\n    "path"  "${internal}"\n  }\n  "1"\n  {\n    "path"  "${sd}"\n  }\n}\n`,
+  );
+  const found = await findGameInstall(g, internal);
+  check('findGameInstall prefers the data-root install over a stub', found === path.join(sd, 'steamapps', 'common', g.folder));
+  await fs.rm(tmp, { recursive: true, force: true });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

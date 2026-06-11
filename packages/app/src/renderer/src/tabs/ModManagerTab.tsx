@@ -51,6 +51,21 @@ export function ModManagerTab({ game }: { game: GameId }) {
     }
   };
 
+  // Move a mod up/down in load order. The list is shown low→high priority; a
+  // mod lower in the list is applied later and wins file conflicts.
+  const move = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= mods.length) return;
+    const order = mods.map((m) => m.modName);
+    [order[index], order[target]] = [order[target], order[index]];
+    setBusy(mods[index].modName);
+    try {
+      setMods(await window.nova.librarySetOrder(game, order));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <NexusBar game={game} auth={auth} onAuth={setAuth} />
@@ -70,8 +85,13 @@ export function ModManagerTab({ game }: { game: GameId }) {
               No mods yet. Connect Nexus and use “Download with Manager” on a mod page, or import a file.
             </div>
           )}
-          {mods.map((m) => (
+          {mods.map((m, i) => (
             <div key={m.modName} className="flex items-center gap-3 rounded-lg border border-nova-border bg-nova-panel2 px-3 py-2.5">
+              <div className="flex flex-col">
+                <button className="text-nova-muted hover:text-nova-accent disabled:opacity-30" onClick={() => move(i, -1)} disabled={i === 0 || busy !== null} title="Apply earlier (lower priority)">▲</button>
+                <button className="text-nova-muted hover:text-nova-accent disabled:opacity-30" onClick={() => move(i, 1)} disabled={i === mods.length - 1 || busy !== null} title="Apply later (wins conflicts)">▼</button>
+              </div>
+              <span className="w-5 text-center text-xs text-nova-muted">{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium text-nova-text">{m.name}</span>
@@ -94,7 +114,9 @@ export function ModManagerTab({ game }: { game: GameId }) {
       </Panel>
 
       <p className="text-center text-xs text-nova-muted">
-        Higher mods in the list win file conflicts. Enabling needs the game unpacked (Launch → Unpack game data).
+        Load order matters for FFXIII mods: mods <span className="text-nova-text">lower in the list</span> are applied last and
+        win file conflicts. Use ▲▼ to reorder — changes re-apply instantly and reversibly. Enabling needs the game unpacked
+        (Launch → Unpack game data).
       </p>
     </div>
   );

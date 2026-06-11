@@ -211,11 +211,20 @@ export async function findGameInstall(
   const root = steamRoot ?? (await findSteamRoot());
   if (!root) return null;
   const libs = await parseLibraryFolders(root);
+  const candidates: string[] = [];
   for (const lib of libs) {
     const candidate = path.join(lib, 'steamapps', 'common', game.folder);
-    if (await isDir(candidate)) return candidate;
+    if (await isDir(candidate)) candidates.push(candidate);
   }
-  return null;
+  if (candidates.length === 0) return null;
+  // Prefer a candidate that actually contains the game's data root. Steam can
+  // leave a STUB install folder (just setup.xml) in the internal library while
+  // the real files live on an SD card — picking the first match would find the
+  // stub. Fall back to the first folder if none has the data root yet.
+  for (const c of candidates) {
+    if (await isDir(path.join(c, game.dataRoot))) return c;
+  }
+  return candidates[0];
 }
 
 /**

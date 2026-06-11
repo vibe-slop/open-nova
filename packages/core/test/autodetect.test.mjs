@@ -62,6 +62,17 @@ console.log('Mod layout auto-detection:');
   check('installer not installable', r.installable === false && r.files.size === 0);
 }
 
+// Windows patcher with an arbitrary exe name (real case: Leviathan's Tears)
+{
+  const d = await fresh('patcher');
+  await w(path.join(d, 'FFXIII2LeviathansTears.exe'), 'MZ');
+  await w(path.join(d, 'WhiteBinTools.dll'), 'x');
+  await w(path.join(d, 'PatchData.bin'), 'x');
+  const r = await detectMod(d);
+  check('arbitrary-named .exe patcher detected as installer', r.layout === 'installer' && !r.installable);
+  check('installer note names the exe', r.note.includes('FFXIII2LeviathansTears.exe'));
+}
+
 // Unknown
 {
   const d = await fresh('unknown');

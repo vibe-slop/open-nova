@@ -66,7 +66,8 @@ async function walkInto(root: string, dir: string, out: Map<string, string>): Pr
   }
 }
 
-const INSTALLER_NAMES = /^(install|setup|.*_installer|.*hd.*)\.(bat|exe|cmd)$/i;
+/** Any Windows executable/script at the top level marks an installer-style mod. */
+const INSTALLER_EXT = /\.(bat|exe|cmd)$/i;
 
 /** Inspect an extracted mod directory and infer how to deploy it. */
 export async function detectMod(extractedDir: string): Promise<DetectedMod> {
@@ -117,13 +118,16 @@ export async function detectMod(extractedDir: string): Promise<DetectedMod> {
     return { layout: 'dataRoot', files: map, contentRoot: dir, note: `Rooted at ${dataRootDir}/.`, installable: map.size > 0 };
   }
 
-  // 3) Windows installer pack — can't auto-apply on Linux.
-  if (lowerFiles.some((f) => INSTALLER_NAMES.test(f)) || dirSet.has('SupportFiles')) {
+  // 3) Windows installer/patcher pack — a .bat/.exe/.cmd (or SupportFiles dir).
+  //    These repack the archives in-place via Windows tools, so a loose-file
+  //    overlay can't apply them on Linux.
+  const installerFile = files.find((f) => INSTALLER_EXT.test(f));
+  if (installerFile || dirSet.has('SupportFiles')) {
     return {
       layout: 'installer',
       files: new Map(),
       contentRoot: root,
-      note: 'Contains a Windows .bat/.exe installer; run it under Wine/Proton or use a pre-repacked release. Not auto-installable.',
+      note: `Windows patcher (${installerFile ?? 'SupportFiles'}); run it under Wine/Proton, or use a pre-repacked release. Not auto-installable as loose files.`,
       installable: false,
     };
   }
