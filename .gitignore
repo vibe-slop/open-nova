@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+out/
+# Never commit game files, original tool binaries, or proprietary blobs
+*.win32.bin
+*.ncmp
+NovaChrysalia*/
