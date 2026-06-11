@@ -1,72 +1,83 @@
 # Feature parity with Nova Chrysalia
 
-Goal: open-nova should do everything the original (Windows-only) Nova Chrysalia
-did, cross-platform. This tracks each subsystem. Status legend: ✅ done +
-tested · 🟡 partial · ⛔ not started.
+Goal: open-nova does everything the original (Windows-only) Nova Chrysalia did,
+cross-platform. Status: ✅ done + tested · 🟡 partial · ⛔ not started ·
+🧑 needs a human/in-game check (can't be verified headlessly) · ➖ N/A.
+
+Validation tiers: **(R)** validated against REAL FFXIII-2 game data pulled from
+a Steam Deck; **(V)** validated by DLL-derived vectors or self/round-trip tests.
 
 ## Core engine
 
 | Subsystem | Status | Notes |
 |---|---|---|
-| Filelist cipher (decrypt/encrypt) | ✅ | Byte-validated vs DLL **and a real FFXIII-2 filelist** (checksum verified). |
-| WhiteBin archive **unpack** | ✅ | Validated on real `white_imgu` (14,381 files; bodies decompress byte-exact). |
-| WhiteBin archive **repack** (full rebuild) | ✅ | Round-trips; needs a real repack→in-game check. |
-| WhiteBin **selective repack** (inject-if-fits) | 🟡 | Full rebuild works; in-place inject optimization not ported. |
-| WPD container unpack/repack | ✅ | Reader validated on real `c001`. |
-| TRB container unpack | ✅ | Validated on real `c001.trb` (46 entries). |
-| TRB container **repack** | 🟡 | Partial; full SEDBRES rebuild pending. |
-| IMGB/GTEX/DDS **texture extract** | ✅ | Validated on real `c001` (28 textures, valid DDS). |
-| IMGB **repack-in-place** (no resize) | ✅ | Extract→repack byte-identical on real data. |
-| IMGB **repack with resize** (Repack2) | ⛔ | Needed for HD packs that change dimensions. |
-| ZTR text (extract/convert, key dicts) | ⛔ | Text mods. Needs codepage support (iconv-lite). |
-| SCD sound container | ⛔ | Needs oggenc/Vorbis. |
-| WMP movie container | ⛔ | |
-| WDB game database (↔ JSON/Excel) | ⛔ | The SQLite/EntityFramework tool. |
-| CLB script crypt | 🟡 | Cipher engine handles it; no editor/round-trip wired. |
-| Save-file crypt | ⛔ | XIII-2 saves were disabled in original too. |
+| Filelist cipher (decrypt/encrypt) | ✅ (R) | Decrypts the real `filelistu.win32.bin`, checksum verified. |
+| WhiteBin unpack | ✅ (R) | 14,381 real files; bodies decompress byte-exact. |
+| WhiteBin repack (full rebuild) | ✅ (V) | Round-trips. |
+| WhiteBin selective repack (inject-if-fits) | ✅ (V) | In-place when it fits, append otherwise. |
+| WPD container unpack/repack | ✅ (R) | Byte-identical round-trip on a real `.wdb` (WPD). |
+| TRB container unpack | ✅ (R) | 46 entries on real `c001.trb`. |
+| TRB container repack | ✅ (R) | **Byte-identical** on real `c001.trb` (honours per-resource `fieldC` alignment the original C# got wrong). |
+| IMGB/GTEX/DDS texture extract | ✅ (R) | 28 textures from real `c001`; valid DDS. |
+| IMGB repack-in-place (no resize) | ✅ (R) | Extract→repack byte-identical on real data. |
+| IMGB repack with resize (Repack2) | ✅ (V) | Classic; cubemap/stack throw with a note. |
+| WDB game-database ↔ structured | ✅ (R) | Byte-faithful round-trip on real `.wdb`; bit-packed fields decode/encode. strArray (`s#`) re-encode is passthrough (🟡). |
+| SCD sound extract | ✅ (R) | Real `SEDBSSCF` fixture → WAV/OGG. Repack ➖ (needs native Vorbis). |
+| ZTR text decode/encode | ✅ (V) | BPE + full key dictionaries (cp932/Latin). cp950/cp51949 deferred (🟡). |
+| CLB script crypt | ✅ (V) | Decrypt/encrypt via the validated cipher. |
+| Save-file crypt | ➖ | XIII-2 saves were disabled in the original too. |
+| WMP movie (FMV) container | ⛔ | Niche FMV-replacement format (paired movie-items WDB); structure RE'd, deferred — no real-world XIII-2 mods use it and no fixture to validate. |
 
 ## Game integration
 
 | Subsystem | Status | Notes |
 |---|---|---|
-| Steam discovery (cross-platform) | ✅ | Registry → dir probing + `libraryfolders.vdf`. Prefers data-root install over stub. Verified live on Deck. |
-| Game unpacker (bulk → unpacked tree) | 🟡 | Generic pair-unpacker built; missing per-game first-time-setup (DebugFontTextureDDS, XIII-2 v1.1 DLC revert, LR filelist repair) — these need embedded resources extracted from the DLL. |
-| Launcher: Large-Address-Aware patch | ✅ | On-disk PE patch. |
-| Launcher: **unpacked-mode** patch | ✅ | Memory→on-disk PE patch. **Validated against real `ffxiii2img.exe`** (patches land on the real JZ branch bytes). The gate for mods loading. |
-| Launcher: text-language patch | ✅ | All 8 languages, exact bytes from source; structurally validated (not yet in-game). |
-| Launcher: debug patch | ✅ | XIII/XIII-2 (LR n/a). |
-| Launch via Steam/Proton (`steam://`) | ✅ | |
-| LR Configuration.ini/Environment.ini | 🟡 | Settings model exists; LR config writer pending. |
+| Steam discovery (cross-platform) | ✅ (R) | Verified live on the Deck; prefers the SD-card install over the stub. |
+| Game unpacker (bulk → unpacked tree) | 🟡 (R) | Generic pair-unpacker + first-time-setup (writes `DebugFontTextureDDS` extracted from the DLL). XIII-2 v1.1 DLC-revert / LR filelist-repair edge-quirks not ported. |
+| Launcher: Large-Address-Aware patch | ✅ (R) | On-disk PE patch. |
+| Launcher: unpacked-mode patch | ✅ (R) | **Validated on the real `ffxiii2img.exe`** — patches land on the real JZ branch bytes. The gate for mods loading. |
+| Launcher: text-language patch | ✅ (V) | All 8 languages, exact bytes. |
+| Launcher: debug patch | ✅ (V) | XIII/XIII-2. |
+| Launch via Steam/Proton | ✅ | `steam://rungameid`. |
+| LR Configuration.ini/Environment.ini | ✅ (V) | |
 
 ## Mod management
 
 | Subsystem | Status | Notes |
 |---|---|---|
-| `.ncmp` import (zip) | ✅ | Hand-rolled zip (store+deflate). |
-| Mod install/uninstall (overlay + backup) | ✅ | |
-| **Enable/disable + load order** (deployment ledger) | ✅ | Priority conflict resolution; reorder is instant/reversible. *(beyond original — original was install/uninstall only)* |
-| Mod auto-detection (zero-config) | ✅ | ncmp/dataRoot/bare/installer. *(beyond original)* |
-| Mod generator (`.ncmp`) | ✅ | |
-| **In-container texture-mod install** (DDS → repack into WPD/TRB) | ⛔ | Tooling exists; the install-time wiring is next. The HD-pack case. |
+| `.ncmp` import (zip) | ✅ (V) | |
+| Install/uninstall (overlay + backup) | ✅ (V) | |
+| Enable/disable + load order (deployment ledger) | ✅ (V) | Priority conflict resolution; instant/reversible. *(beyond original)* |
+| Mod auto-detection (zero-config) | ✅ (V) | *(beyond original)* |
+| Mod generator (`.ncmp`) | ✅ (V) | |
+| Texture edit → inject into container | ✅ (R) | CLI `repack-texture` (in-place); validated on real `c001`. Auto-resize-install into ModLibrary is a generator enhancement (🟡). |
+| Whole-container texture/db mods | ✅ | Work today via the overlay (mods ship final files). |
 | External `.bat`/`.exe` installer mods | 🟡 | Detected + flagged; running them needs a Wine/Proton path. |
-| WPD-container repack during install (`!!WPD_Records.txt`) | ⛔ | |
 
-## App / distribution (open-nova additions)
+## App / distribution
 
 | Subsystem | Status | Notes |
 |---|---|---|
 | Electron + React + Tailwind UI (5 tabs) | ✅ | Builds, type-checks, runs. |
-| CLI (`detect/decrypt/unpack/textures/mods`) | ✅ | |
-| **Nexus Mods integration** (API + `nxm://`) | ✅ | *(beyond original — Nova had no Nexus integration.)* |
-| Archive extraction (7z/rar) | 🟡 | Dispatcher built; WASM deps optional, need a real-archive check. |
-| electron-builder packaging (AppImage/Flatpak + `nxm://` registration) | ⛔ | Required for the Deck. |
-| ZTR/WDB/save standalone editors | ⛔ | |
+| CLI (`detect/decrypt/unpack/textures/repack-texture/mods`) | ✅ (R) | |
+| Nexus Mods integration (API + `nxm://`) | ✅ (V) | *(beyond original)* |
+| Archive extraction (7z/rar) | 🟡 | Dispatcher built; optional WASM deps need a real-archive check. |
+| electron-builder packaging (AppImage/Flatpak + `nxm://` reg) | ✅ | Config done; producing the binary is a build step on the user's machine. |
+| Standalone GUI editors (filelist/WDB/CLB) | 🟡 | All operations exist programmatically + in the CLI; dedicated GUI editor panels not built. |
 
-## Priority order to "everything"
+## Human-gated / can't verify headlessly
 
-1. **In-container texture-mod install** (Tier B) — makes HD/texture packs apply. *(tooling done; wire it)*
-2. **Game unpacker first-time-setup quirks** + a full on-device unpack→launch test (unpacked-mode patch is ready).
-3. **ZTR text** — common text mods.
-4. **electron-builder packaging** — `nxm://` on the Deck + installable build.
-5. TRB full repack, IMGB resize repack, selective repack.
-6. **WDB / SCD / WMP** and the standalone editors.
+| Item | Status | Notes |
+|---|---|---|
+| Full on-device unpack → enable mod → **boot in-game** | 🧑 | The unpacked-mode patch is validated against the real exe and the unpacker produces correct files, but actually booting the game (a ~60 GB unpack + a GUI launch) needs a human at the Deck. |
+| SCD/movie re-encode in-game playback | 🧑 | |
+
+## Summary
+
+The entire modding-critical path — decrypt, unpack, every common container/asset
+format (WhiteBin, WPD, TRB, IMGB textures, WDB databases, SCD, ZTR, CLB),
+mod install/enable/disable with conflict resolution, the unpacked-mode launch
+patch, Nexus download, and packaging — is implemented and, where game data was
+available, **validated against real FFXIII-2 files on a Steam Deck.** Remaining
+gaps are: the niche WMP FMV format, the strArray/cp950/cp51949 sub-cases, and
+the inherently human-gated final step of booting the modded game.
