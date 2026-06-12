@@ -237,9 +237,16 @@ export class ModLibrary {
 
     try {
       const detected = await detectMod(extractedDir);
-      const modName = safeName(name);
+      // Pick a unique library key so importing a second mod with the same name
+      // doesn't silently clobber the first; disambiguate the display name too.
+      const baseName = safeName(name);
+      let modName = baseName;
+      let displayName = name;
+      for (let n = 2; await exists(this.modDir(gameId, modName)); n++) {
+        modName = `${baseName}-${n}`;
+        displayName = `${name} (${n})`;
+      }
       const dir = this.modDir(gameId, modName);
-      await fs.rm(dir, { recursive: true, force: true });
       await fs.mkdir(dir, { recursive: true });
       // Move the detected content root into content/.
       await moveContents(detected.contentRoot, path.join(dir, CONTENT));
@@ -250,7 +257,7 @@ export class ModLibrary {
       const mod: LibraryMod = {
         modName,
         gameId,
-        name,
+        name: displayName,
         source: meta.source ?? 'local',
         version: meta.version ?? '',
         author: meta.author ?? '',
@@ -392,9 +399,15 @@ export class ModLibrary {
     const providers: ModProvider[] = [];
     for (const m of enabled) {
       const content = path.join(this.modDir(gameId, m.modName), CONTENT);
-      const detected = await detectMod(content);
-      const injections = await listContainerInjections(content);
-      providers.push({ modName: m.modName, files: detected.files, injections });
+      try {
+        const detected = await detectMod(content);
+        const injections = await listContainerInjections(content);
+        providers.push({ modName: m.modName, files: detected.files, injections });
+      } catch (err) {
+        // A mod whose staged content is missing/unreadable must not break the
+        // whole deploy — skip it and keep applying the rest.
+        console.warn(`[open-nova] skipping mod "${m.modName}" (content unreadable): ${(err as Error).message}`);
+      }
     }
     await this.deployment.reconcile(gameId, whitePath, providers);
 

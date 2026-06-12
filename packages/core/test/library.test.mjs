@@ -92,6 +92,29 @@ await lib.setEnabled('XIII-2', C.modName, true, white);
 check('wrapped .ncmp deploys its Data files', (await r(path.join(white, 'chr/pc/c240/bin/c240.win32.trb'))) === 'TRB-DATA');
 await lib.setEnabled('XIII-2', C.modName, false, white);
 
+// Importing a second mod with the SAME display name doesn't clobber the first —
+// it gets a unique library key + a disambiguated display name.
+const dupDir = path.join(tmp, 'extracted-dup');
+await w(path.join(dupDir, 'sys/dup.bin'), 'DUP');
+const Adup = await lib.importExtracted('XIII-2', dupDir, { name: 'Mod A' });
+check('duplicate-name import gets a unique key', Adup.modName !== A.modName);
+check('duplicate-name import disambiguates the display name', /\(2\)/.test(Adup.name));
+check('both same-named mods coexist', (await lib.list('XIII-2')).filter((m) => m.modName === A.modName || m.modName === Adup.modName).length === 2);
+
+// Resilient reconcile: a mod whose staged content is missing is skipped (and the
+// rest still deploy) instead of the whole reconcile throwing.
+for (const m of await lib.list('XIII-2')) await lib.setEnabled('XIII-2', m.modName, false, white);
+await fs.rm(path.join(base, 'Mods', 'XIII-2', A.modName, 'content'), { recursive: true, force: true });
+let reconcileThrew = false;
+try {
+  await lib.setEnabled('XIII-2', B.modName, true, white); // intact -> deploys
+  await lib.setEnabled('XIII-2', A.modName, true, white); // content gone -> skipped, not fatal
+} catch {
+  reconcileThrew = true;
+}
+check('reconcile skips a content-missing mod without throwing', !reconcileThrew);
+check('an intact mod still deploys despite a broken sibling', (await r(path.join(white, 'sys/shared.bin'))) === 'FROM-B');
+
 await fs.rm(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

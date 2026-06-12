@@ -73,6 +73,10 @@ export function GameScreen({
     try {
       const r = await window.nova.restoreGame(game);
       setRestoreMsg(r.message);
+      // Restore cleared the unpacked flag, so the game is no longer in a
+      // modding-ready state — re-detect so the screen reflects that (it drops to
+      // the first-run "Set up / unpack" gate) instead of a stale, inert mod list.
+      await onRefresh();
     } finally {
       setRestoring(false);
     }

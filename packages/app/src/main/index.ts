@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, powerSaveBlocker } from 'electron';
 import { join, basename } from 'node:path';
 import { promises as fs, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -191,6 +191,9 @@ async function whiteRootFor(game: GameId): Promise<string | null> {
 }
 
 
+/** Count of in-flight unpacks — gates the "quit during unpack" confirmation. */
+let unpacking = 0;
+
 /**
  * Bulk-unpack every filelist/white_img pair under the game's data root into the
  * loose-file tree, then write the unpacked marker. Reuses the validated archive
@@ -219,32 +222,51 @@ async function unpackGame(game: GameId, force = false): Promise<{ ok: boolean; m
     }
   }
 
-  let done = 0;
-  for (const { filelist, img } of pairs) {
-    try {
-      const { files } = unpackArchive(await fs.readFile(filelist), await fs.readFile(img), g.number);
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const rel = f.virtualPath === ' ' ? `noPath/FILE_${i}` : f.virtualPath;
-        const dest = join(root, ...rel.split('/'));
-        if (await exists(dest)) continue;
-        await fs.mkdir(join(dest, '..'), { recursive: true });
-        await fs.writeFile(dest, f.data);
+  // Mark unpacking in-flight (gates the close-confirm dialog) and inhibit system
+  // sleep/suspend so a multi-minute unpack isn't interrupted by the Deck dozing.
+  unpacking++;
+  const blockerId = powerSaveBlocker.start('prevent-app-suspension');
+  try {
+    let done = 0;
+    for (const { filelist, img } of pairs) {
+      try {
+        const { files } = unpackArchive(await fs.readFile(filelist), await fs.readFile(img), g.number);
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const rel = f.virtualPath === ' ' ? `noPath/FILE_${i}` : f.virtualPath;
+          const dest = join(root, ...rel.split('/'));
+          if (await exists(dest)) continue;
+          await fs.mkdir(join(dest, '..'), { recursive: true });
+          await fs.writeFile(dest, f.data);
+        }
+        log('info', `Unpacked ${files.length} files from ${filelist}.`);
+      } catch (err) {
+        // Stop immediately on any failure — a partial unpack leaves the loose tree
+        // missing resources, which crashes the game in unpacked mode. Don't write
+        // the unpacked marker, so the game stays in its normal packed state.
+        const msg = `Unpacking failed on ${basename(filelist)}: ${(err as Error).message}. The game was only partially unpacked — use "Restore game to normal", then try again.`;
+        log('error', msg);
+        return { ok: false, message: msg };
       }
-      log('info', `Unpacked ${files.length} files from ${filelist}.`);
-    } catch (err) {
-      // Stop immediately on any failure — a partial unpack leaves the loose tree
-      // missing resources, which crashes the game in unpacked mode. Don't write
-      // the unpacked marker, so the game stays in its normal packed state.
-      const msg = `Unpacking failed on ${basename(filelist)}: ${(err as Error).message}. The game was only partially unpacked — use "Restore game to normal", then try again.`;
-      log('error', msg);
-      return { ok: false, message: msg };
+      send(IPC.evProgress, { jobId: 'unpackGame', kind: 'unpack', current: ++done, total: pairs.length, message: filelist });
     }
-    send(IPC.evProgress, { jobId: 'unpackGame', kind: 'unpack', current: ++done, total: pairs.length, message: filelist });
+    await firstTimeSetup(root);
+    await fs.writeFile(join(root, UNPACKED_MARKER), new Date().toISOString());
+    // Deploy any already-enabled mods (incl. default-on fixes) right away so the
+    // on-disk tree matches the toggles immediately after unpacking — not only at
+    // the next launch. Best-effort: a reconcile failure doesn't fail the unpack.
+    try {
+      await library().syncBuiltinFixes(game);
+      await library().reconcile(game, root);
+      log('info', 'Deployed enabled mods after unpack.');
+    } catch (err) {
+      log('warn', `post-unpack reconcile: ${(err as Error).message}`);
+    }
+    return { ok: true, message: `Unpacked ${pairs.length} archive(s).` };
+  } finally {
+    unpacking--;
+    if (powerSaveBlocker.isStarted(blockerId)) powerSaveBlocker.stop(blockerId);
   }
-  await firstTimeSetup(root);
-  await fs.writeFile(join(root, UNPACKED_MARKER), new Date().toISOString());
-  return { ok: true, message: `Unpacked ${pairs.length} archive(s).` };
 }
 
 /**
@@ -520,6 +542,29 @@ function createWindow(): void {
 
   if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+
+  // Confirm before quitting mid-unpack — closing now would leave a partial,
+  // crash-prone loose tree (the unpack runs in this process).
+  let allowClose = false;
+  mainWindow.on('close', (e) => {
+    const win = mainWindow;
+    if (allowClose || unpacking === 0 || !win) return;
+    e.preventDefault();
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Keep unpacking', 'Quit anyway'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Unpacking in progress',
+      message: 'open-nova is still unpacking the game.',
+      detail:
+        'Quitting now will leave the game only partially unpacked — you\'d need to use "Restore game to normal" and unpack again. Quit anyway?',
+    });
+    if (choice === 1) {
+      allowClose = true;
+      win.close();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
