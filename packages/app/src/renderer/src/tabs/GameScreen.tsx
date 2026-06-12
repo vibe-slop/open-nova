@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import type { AppConfig, GameId, GameStatus } from '../../../shared/ipc';
-import { Panel, Button, Field, Select, Toggle } from '../ui';
+import { Panel, Button, Field, Select } from '../ui';
 import { UnpackGate } from './UnpackGate';
 import { ModManagerTab } from './ModManagerTab';
 
@@ -52,14 +52,16 @@ export function GameScreen({
   const [showSettings, setShowSettings] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreMsg, setRestoreMsg] = useState('');
+  const [launchNote, setLaunchNote] = useState<{ ok: boolean; message: string } | null>(null);
 
   if (!status?.installed) return <InstallPrompt game={game} gameName={gameName} onRefresh={onRefresh} />;
   if (!status.unpacked) return <UnpackGate game={game} gameName={gameName} onDone={onRefresh} />;
 
   const launch = async () => {
     setBusy(true);
+    setLaunchNote(null);
     try {
-      await window.nova.launchGame(game);
+      setLaunchNote(await window.nova.launchGame(game));
     } finally {
       setBusy(false);
     }
@@ -104,37 +106,27 @@ export function GameScreen({
           </button>
         </div>
 
+        {launchNote && (
+          <div
+            className={`mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed ${
+              launchNote.ok ? 'bg-nova-accent/10 text-nova-accent' : 'bg-nova-bad/10 text-nova-bad'
+            }`}
+          >
+            {launchNote.message}
+          </div>
+        )}
+
         {showSettings && (
-          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-nova-border pt-4">
+          <div className="mt-4 space-y-4 border-t border-nova-border pt-4">
             <Field label="Text language">
               <Select value={config.textLanguage} onChange={(v) => update({ textLanguage: Number(v) })} options={LANGS} />
             </Field>
-            <Field label="Resolution">
-              <Select
-                value={config.width ? `${config.width}x${config.height}` : 'desktop'}
-                onChange={(v) => {
-                  if (v === 'desktop') return update({ width: null, height: null });
-                  const [w, h] = v.split('x').map(Number);
-                  update({ width: w, height: h });
-                }}
-                options={[
-                  { value: 'desktop', label: 'Desktop resolution' },
-                  { value: '1280x720', label: '1280 × 720' },
-                  { value: '1920x1080', label: '1920 × 1080' },
-                  { value: '2560x1440', label: '2560 × 1440' },
-                ]}
-              />
-            </Field>
-            <div className="col-span-2 flex flex-wrap gap-6 pt-1">
-              <Toggle checked={config.fullscreen} onChange={(v) => update({ fullscreen: v })} label="Fullscreen" />
-              <Toggle checked={config.voiceJP} onChange={(v) => update({ voiceJP: v })} label="Japanese voices" />
-            </div>
             {status.installPath && (
-              <div className="col-span-2 truncate text-xs text-nova-muted" title={status.installPath}>
+              <div className="truncate text-xs text-nova-muted" title={status.installPath}>
                 Install: <span className="font-mono text-nova-text">{status.installPath}</span>
               </div>
             )}
-            <div className="col-span-2 mt-1 border-t border-nova-border pt-3">
+            <div className="mt-1 border-t border-nova-border pt-3">
               <div className="flex items-center justify-between gap-4">
                 <p className="text-xs leading-relaxed text-nova-muted">
                   Game won't launch or acts up? <span className="text-nova-text">Restore to normal</span> un-patches the

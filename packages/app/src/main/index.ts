@@ -23,10 +23,6 @@ const DEFAULT_CONFIG: AppConfig = {
   selectedGame: 'XIII',
   filesystemMode: 'unpacked',
   textLanguage: 1,
-  voiceJP: false,
-  fullscreen: true,
-  width: null,
-  height: null,
   gamePaths: {},
 };
 
@@ -252,10 +248,12 @@ async function unpackGame(game: GameId, force = false): Promise<{ ok: boolean; m
 }
 
 /**
- * Revert a game to its normal (packed/vanilla) state: restore the original exe
- * from the `.original` backup (undoing the unpacked-mode / LAA / language patch)
- * and clear the unpacked flag. The game then reads its original archives again;
- * any extracted loose files remain on disk but are ignored while packed.
+ * Revert a game to its normal (packed/vanilla) state: tear down every deployed
+ * mod overlay + filelist edit (restoring vanilla files from the ledger/backups),
+ * restore the original exe from the `.original` backup (undoing the
+ * unpacked-mode / LAA / language patch), and clear the unpacked flag. The game
+ * then reads its original archives again; the extracted loose files remain on
+ * disk but are ignored while packed.
  */
 async function restoreGame(game: GameId): Promise<{ ok: boolean; message: string }> {
   const install = await resolveInstall(game);
@@ -263,6 +261,15 @@ async function restoreGame(game: GameId): Promise<{ ok: boolean; message: string
   if (!install || !g) return { ok: false, message: 'Game not found.' };
 
   const did: string[] = [];
+  // 1) Revert all mod overlays + filelist edits while the loose tree is still in
+  //    place (restores vanilla files from the deployment ledger + filelist backups).
+  try {
+    await library().revertToVanilla(game, join(install, g.dataRoot));
+    did.push('reverted all mod changes');
+  } catch (err) {
+    log('warn', `restore (revert mods): ${(err as Error).message}`);
+  }
+  // 2) Restore the original exe (undo the unpacked-mode / LAA / language patch).
   try {
     const exe = join(install, ...g.exeRel.split('/'));
     const orig = exe + '.original';
@@ -271,8 +278,9 @@ async function restoreGame(game: GameId): Promise<{ ok: boolean; message: string
       did.push('restored the original game executable');
     }
   } catch (err) {
-    log('warn', `restore exe: ${(err as Error).message}`);
+    log('warn', `restore (exe): ${(err as Error).message}`);
   }
+  // 3) Clear the unpacked flag so the game is treated as vanilla/packed.
   try {
     const marker = join(install, g.dataRoot, UNPACKED_MARKER);
     if (await exists(marker)) {
@@ -280,10 +288,10 @@ async function restoreGame(game: GameId): Promise<{ ok: boolean; message: string
       did.push('cleared the unpacked flag');
     }
   } catch (err) {
-    log('warn', `restore marker: ${(err as Error).message}`);
+    log('warn', `restore (marker): ${(err as Error).message}`);
   }
 
-  const summary = did.length ? did.join(' and ') : 'nothing needed restoring (already vanilla)';
+  const summary = did.length ? did.join(', ') : 'nothing needed restoring (already vanilla)';
   log('info', `Restore ${game}: ${summary}.`);
   return {
     ok: true,
@@ -420,6 +428,8 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
   const g = getGameById(game);
   if (!install || !g) return { ok: false, message: 'Game not found.' };
 
+  const warnings: string[] = [];
+
   // Apply enabled mods (incl. default-on fixes like FF13Fix) right before launch.
   try {
     await library().syncBuiltinFixes(game);
@@ -427,6 +437,7 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
     log('info', 'Applied enabled mods + fixes.');
   } catch (err) {
     log('warn', `mod reconcile before launch: ${(err as Error).message}`);
+    warnings.push(`couldn't apply mods (${(err as Error).message})`);
   }
 
   // Patch the on-disk exe before launch. In unpacked mode this includes the
@@ -447,18 +458,38 @@ async function launchGame(game: GameId): Promise<{ ok: boolean; message: string 
       await fs.writeFile(exe, patched);
       log('info', unpacked ? 'Patched exe: unpacked mode + LAA + language.' : 'Patched exe: LAA + language.');
       if (config.filesystemMode === 'unpacked' && !unpacked) {
-        log('warn', 'Unpacked mode requested but game is not unpacked yet — launching packed. Run "Unpack game data" first.');
+        const w = "the game isn't unpacked yet — launching unmodded. Run the one-time unpack first";
+        log('warn', w);
+        warnings.push(w);
       }
+    } else {
+      warnings.push('game executable not found — launching without patching');
     }
   } catch (err) {
-    log('warn', `exe patch skipped: ${(err as Error).message}`);
+    // A thrown patch error (e.g. the expected-byte guard) means we must NOT write
+    // a half/wrong-patched exe — patchExeForLaunch returns a fresh buffer, so the
+    // on-disk exe is untouched. Surface it instead of silently launching.
+    log('error', `exe patch failed: ${(err as Error).message}`);
+    warnings.push(`couldn't patch the game (${(err as Error).message}) — it may run unmodded`);
   }
 
   const url = `steam://rungameid/${g.steamAppId}`;
-  if (process.platform === 'linux') spawn('steam', [url], { detached: true, stdio: 'ignore' }).unref();
-  else await shell.openExternal(url);
+  try {
+    if (process.platform === 'linux') {
+      const child = spawn('steam', [url], { detached: true, stdio: 'ignore' });
+      child.on('error', (e) => log('error', `failed to launch Steam: ${e.message}`));
+      child.unref();
+    } else {
+      await shell.openExternal(url);
+    }
+  } catch (err) {
+    return { ok: false, message: `Couldn't reach Steam to launch: ${(err as Error).message}` };
+  }
   log('info', `Launching ${game} via Steam…`);
-  return { ok: true, message: 'Launching via Steam…' };
+
+  return warnings.length
+    ? { ok: false, message: `Launching via Steam, but ${warnings.join('; ')}.` }
+    : { ok: true, message: 'Launching via Steam — the game should open shortly.' };
 }
 
 // --- Window + single-instance ---------------------------------------------

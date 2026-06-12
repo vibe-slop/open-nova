@@ -11,7 +11,7 @@
  *  - text language — forces the in-game text language (1..8).
  *  - debug — enables the engine debug features (XIII / XIII-2 only).
  */
-import { applyBytesAtRva, patchLargeAddressAware, isLargeAddressAware } from './pe-patch.js';
+import { applyBytesAtRva, rvaToFileOffset, patchLargeAddressAware, isLargeAddressAware } from './pe-patch.js';
 
 /** Engine language id per textMode (1..8 = EN/FR/DE/IT/ES/JA/ZH/KO). */
 const LANG_ID: Record<number, number> = { 1: 1, 2: 5, 3: 4, 4: 3, 5: 6, 6: 0, 7: 10, 8: 8 };
@@ -29,6 +29,12 @@ export interface ExePatch {
   rva: number;
   bytes: number[];
   label: string;
+  /**
+   * Bytes that MUST currently be present at `rva` before patching — a guard
+   * against writing into an unexpected build. Set only where the original byte
+   * is verified against a real exe (currently the XIII-2 unpacked patches).
+   */
+  expect?: number[];
 }
 
 function langDwordLE(mode: number): number[] {
@@ -53,7 +59,8 @@ export function buildLaunchPatches(gameNumber: 1 | 2 | 3, opts: LaunchPatchOptio
     }
     if (opts.debug) for (const rva of [38343, 38849, 38896, 39102]) patches.push({ rva, bytes: [0x00], label: 'debug' });
   } else if (gameNumber === 2) {
-    if (opts.unpacked) patches.push({ rva: 39044, bytes: [0x75], label: 'unpacked' }, { rva: 59433, bytes: [0xeb], label: 'unpacked' });
+    // XIII-2 unpacked: the two original bytes are a verified 0x74 (JZ) — guard them.
+    if (opts.unpacked) patches.push({ rva: 39044, bytes: [0x75], expect: [0x74], label: 'unpacked' }, { rva: 59433, bytes: [0xeb], expect: [0x74], label: 'unpacked' });
     if (lang) {
       patches.push(
         { rva: 2828056, bytes: [0x24], label: 'lang' },
@@ -77,11 +84,23 @@ export function buildLaunchPatches(gameNumber: 1 | 2 | 3, opts: LaunchPatchOptio
 /**
  * Return a copy of the executable with the launch patches applied (plus the
  * Large-Address-Aware bit, which the game needs to avoid out-of-memory crashes).
- * Throws if any patch offset is out of range (signals a wrong/updated exe).
+ * Throws if any patch offset is out of range, or if a patch carries an `expect`
+ * guard and the current bytes don't match (signals a wrong/unexpected exe build,
+ * so we refuse to corrupt it rather than blindly overwriting).
  */
 export function patchExeForLaunch(exeBuf: Buffer, gameNumber: 1 | 2 | 3, opts: LaunchPatchOptions): Buffer {
   let out = isLargeAddressAware(exeBuf) ? Buffer.from(exeBuf) : patchLargeAddressAware(exeBuf);
   for (const p of buildLaunchPatches(gameNumber, opts)) {
+    if (p.expect) {
+      const off = rvaToFileOffset(out, p.rva);
+      const cur = out.subarray(off, off + p.expect.length);
+      if (!cur.equals(Buffer.from(p.expect))) {
+        const hex = (a: ArrayLike<number>) => Array.from(a, (b) => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+        throw new Error(
+          `exe patch "${p.label}" at RVA ${p.rva}: expected ${hex(p.expect)} but found ${hex(cur)} — not the expected game build, refusing to patch.`,
+        );
+      }
+    }
     out = applyBytesAtRva(out, p.rva, Buffer.from(p.bytes));
   }
   return out;

@@ -30,6 +30,14 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
+      - name: Typecheck
+        run: |
+          (cd packages/core && bun run typecheck)
+          (cd packages/app && bun run typecheck)
+
+      - name: Test
+        run: cd packages/core && bun run test
+
       - name: Build App
         # Builds @open-nova/core (bundled from source) + the renderer/main via
         # electron-vite, then packages a Linux AppImage with electron-builder.

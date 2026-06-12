@@ -9,10 +9,6 @@ let config: AppConfig = {
   selectedGame: 'XIII',
   filesystemMode: 'unpacked',
   textLanguage: 1,
-  voiceJP: false,
-  fullscreen: true,
-  width: null,
-  height: null,
   gamePaths: {},
 };
 

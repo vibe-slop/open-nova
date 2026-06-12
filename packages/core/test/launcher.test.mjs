@@ -70,5 +70,32 @@ check('LR lang prepends 9090B9', hex(buildLaunchPatches(3, { textLanguage: 2 })[
   check('patchExeForLaunch returns a copy (LAA bit set)', patched !== exe && patched.length === exe.length);
 }
 
+// Expected-byte guard: patchExeForLaunch refuses to patch when the byte at a
+// guarded RVA isn't the verified original (XIII-2 unpacked RVAs expect 0x74).
+{
+  const exe = Buffer.alloc(0x10000); // big enough to reach rva 39044/59433
+  exe.writeUInt16LE(0x5a4d, 0);
+  const pe = 0x80;
+  exe.writeUInt32LE(pe, 0x3c);
+  exe.writeUInt32LE(0x00004550, pe);
+  exe.writeUInt16LE(1, pe + 6);
+  exe.writeUInt16LE(0xe0, pe + 0x14);
+  exe.writeUInt16LE(0x10b, pe + 0x18);
+  const sec = pe + 0x18 + 0xe0;
+  exe.write('.text', sec, 'ascii');
+  exe.writeUInt32LE(0x10000, sec + 8); // VirtualSize (covers the RVAs)
+  exe.writeUInt32LE(0x1000, sec + 12); // VirtualAddress
+  exe.writeUInt32LE(0xf000, sec + 16); // SizeOfRawData
+  exe.writeUInt32LE(0x400, sec + 20); // PointerToRawData
+  for (const rva of [39044, 59433]) exe[rvaToFileOffset(exe, rva)] = 0x74; // verified original
+  let okWhenMatch = true;
+  try { patchExeForLaunch(exe, 2, { unpacked: true }); } catch { okWhenMatch = false; }
+  check('expect-guard passes when the original byte matches (0x74)', okWhenMatch);
+  exe[rvaToFileOffset(exe, 39044)] = 0x90; // wrong/unexpected byte
+  let threw = false;
+  try { patchExeForLaunch(exe, 2, { unpacked: true }); } catch (e) { threw = /expected/i.test(String(e.message)); }
+  check('expect-guard refuses to patch an unexpected byte', threw);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

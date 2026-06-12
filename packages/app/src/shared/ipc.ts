@@ -38,10 +38,6 @@ export interface AppConfig {
   selectedGame: GameId;
   filesystemMode: 'unpacked' | 'packed';
   textLanguage: number; // 1..8 EN/FR/DE/IT/ES/JA/ZH/KO
-  voiceJP: boolean;
-  fullscreen: boolean;
-  width: number | null;
-  height: number | null;
   /** Explicit per-game install path overrides (when auto-detect fails). */
   gamePaths: Partial<Record<GameId, string>>;
 }

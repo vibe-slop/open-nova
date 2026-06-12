@@ -421,6 +421,23 @@ export class ModLibrary {
     });
   }
 
+  /**
+   * Tear down EVERYTHING this tool deployed, returning the game tree to vanilla:
+   * restore every mod-overlaid / injected file from the deployment ledger (by
+   * reconciling to zero providers) and restore each edited filelist from its
+   * backup. Leaves mod metadata intact (mods stay staged/enabled in the library);
+   * this only reverts the on-disk game files. Used by the app's "Restore" path.
+   */
+  async revertToVanilla(gameId: GameId, whitePath: string): Promise<void> {
+    await this.deployment.reconcile(gameId, whitePath, []);
+    await reconcileFilelist({
+      gameId,
+      whitePath,
+      backupDir: path.join(this.basePath, 'FilelistBackup', gameId),
+      wanted: new Map(),
+    });
+  }
+
   private async readMeta(gameId: GameId, modName: string): Promise<LibraryMod | null> {
     try {
       return JSON.parse(await fs.readFile(path.join(this.modDir(gameId, modName), META), 'utf8')) as LibraryMod;
